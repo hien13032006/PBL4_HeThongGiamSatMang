@@ -51,7 +51,7 @@ public class TcpServerListener {
                 queueManager.putData(message);
             }
         } catch (Exception e) {
-            System.out.println("Agent đã ngắt kết nối: " + socket.getInetAddress());
+            System.out.println("Agent da ngat ket noi: " + socket.getInetAddress());
         }
     }
 }

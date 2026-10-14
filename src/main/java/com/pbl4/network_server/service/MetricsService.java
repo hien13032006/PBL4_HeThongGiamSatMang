@@ -25,6 +25,9 @@ public class MetricsService {
 
     @Autowired
     private MetricsHistoryRepository metricsHistoryRepository;
+    
+    @Autowired
+    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public void processAndSaveMetrics(MetricsMessageDto message) {
@@ -94,16 +97,19 @@ public class MetricsService {
 
             // 3. Kiểm tra ngưỡng cảnh báo (Alert Engine cơ bản)
             checkThresholds(agentId, detail);
+
+            messagingTemplate.convertAndSend("/topic/metrics/" + agentId, message);
+            messagingTemplate.convertAndSend("/topic/agents", agent); // Cập nhật danh sách Agent
         }
     }
 
     // Phương thức kiểm tra các thông số có vượt ngưỡng cho phép không
     private void checkThresholds(String agentId, MetricsMessageDto.MetricsDetailDto detail) {
         if (detail.getLatency() != null && detail.getLatency() > 100.0) {
-            System.out.println("[CẢNH BÁO] Agent " + agentId + " có độ trễ cao: " + detail.getLatency() + " ms!");
+            System.out.println("[CANH BAO] Agent " + agentId + " co do tre cao: " + detail.getLatency() + " ms!");
         }
         if (detail.getPacketLoss() != null && detail.getPacketLoss() > 5.0) {
-            System.out.println("[CẢNH BÁO] Agent " + agentId + " tỷ lệ mất gói cao: " + detail.getPacketLoss() + "%!");
+            System.out.println("[CANH BAO] Agent " + agentId + " ty le mat goi cao: " + detail.getPacketLoss() + "%!");
         }
     }
 }
