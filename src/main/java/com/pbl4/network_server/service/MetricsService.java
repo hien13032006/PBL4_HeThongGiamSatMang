@@ -6,6 +6,7 @@ import com.pbl4.network_server.entity.MetricsHistory;
 import com.pbl4.network_server.repository.AgentRepository;
 import com.pbl4.network_server.repository.MetricsHistoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,8 +15,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
 
-/*Chịu trách nhiệm nhận dữ liệu từ Consumer Worker thực hiện việc cập nhật thông tin Agent
-nếu là gói tin Register, lưu lịch sử metrics vào CSDL thông qua Repository và kiểm tra các ngưỡng cảnh báo*/
+/* Chịu trách nhiệm nhận dữ liệu từ Consumer Worker thực hiện việc cập nhật thông tin Agent
+   nếu là gói tin Register, lưu lịch sử metrics vào CSDL thông qua Repository và kiểm tra các ngưỡng cảnh báo */
 
 @Service
 public class MetricsService {
@@ -25,9 +26,9 @@ public class MetricsService {
 
     @Autowired
     private MetricsHistoryRepository metricsHistoryRepository;
-    
+
     @Autowired
-    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    private SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public void processAndSaveMetrics(MetricsMessageDto message) {
@@ -41,12 +42,13 @@ public class MetricsService {
         // 1. Xử lý gói tin đăng ký (REGISTER) hoặc tự động đăng ký nếu agent chưa tồn tại
         Optional<Agent> optionalAgent = agentRepository.findById(agentId);
         Agent agent;
+        boolean isNewAgent = false;
 
         if (optionalAgent.isPresent()) {
             agent = optionalAgent.get();
             agent.setStatus("ONLINE");
             agent.setLastSeen(LocalDateTime.now());
-            // Nếu có thông tin metadata mới thì cập nhật lại
+            
             if ("REGISTER".equalsIgnoreCase(type)) {
                 if (message.getHostname() != null) agent.setHostname(message.getHostname());
                 if (message.getIpAddress() != null) agent.setIpAddress(message.getIpAddress());
@@ -56,7 +58,7 @@ public class MetricsService {
             }
             agentRepository.save(agent);
         } else {
-            // Nếu Agent mới hoàn toàn gửi tin lên mà chưa có trong DB
+            // Trường hợp Agent mới hoàn toàn gửi tin lên
             agent = Agent.builder()
                     .agentId(agentId)
                     .hostname(message.getHostname() != null ? message.getHostname() : "Unknown")
@@ -68,6 +70,12 @@ public class MetricsService {
                     .lastSeen(LocalDateTime.now())
                     .build();
             agentRepository.save(agent);
+            isNewAgent = true;
+        }
+
+        // Nếu là gói tin REGISTER hoặc Agent mới, thông báo ngay cho Frontend để cập nhật bảng danh sách
+        if ("REGISTER".equalsIgnoreCase(type) || isNewAgent) {
+            messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
         }
 
         // 2. Nếu message là loại METRICS, tiến hành lưu lịch sử vào bảng metrics_history
@@ -98,8 +106,9 @@ public class MetricsService {
             // 3. Kiểm tra ngưỡng cảnh báo (Alert Engine cơ bản)
             checkThresholds(agentId, detail);
 
+            // Bắn dữ liệu real-time tới WebSocket
             messagingTemplate.convertAndSend("/topic/metrics/" + agentId, message);
-            messagingTemplate.convertAndSend("/topic/agents", agent); // Cập nhật danh sách Agent
+            messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
         }
     }
 
