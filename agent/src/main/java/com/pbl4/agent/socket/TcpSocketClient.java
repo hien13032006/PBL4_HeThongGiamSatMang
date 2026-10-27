@@ -38,6 +38,7 @@ public class TcpSocketClient implements AutoCloseable {
     private final NetworkMetricsService metricsService;
     private final BlockingQueue<String> outboundQueue = new ArrayBlockingQueue<>(100);
     private final AtomicBoolean running = new AtomicBoolean(true);
+    private final AtomicBoolean connectionReady = new AtomicBoolean(false);
     private final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(2);
 
     public TcpSocketClient(String host, int port, AgentRegistration registration, int reconnectDelayMs,
@@ -82,6 +83,8 @@ public class TcpSocketClient implements AutoCloseable {
                      BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
                     log.info("Connected to TCP server {}:{}", host, port);
                     sendMessage(writer, writeAsJson(registration));
+                    connectionReady.set(true);
+                    log.info("Sent registration for agent {}", agentId);
 
                     while (running.get() && !socket.isClosed()) {
                         String message = outboundQueue.poll(500, TimeUnit.MILLISECONDS);
@@ -101,6 +104,9 @@ public class TcpSocketClient implements AutoCloseable {
                 }
             } catch (Exception e) {
                 log.warn("TCP connection failed for {}:{}, retrying in {} ms", host, port, retryDelayMs, e);
+            } finally {
+                connectionReady.set(false);
+                outboundQueue.clear();
             }
 
             try {
@@ -114,7 +120,7 @@ public class TcpSocketClient implements AutoCloseable {
     }
 
     private void enqueueMetric() {
-        if (!running.get()) {
+        if (!running.get() || !connectionReady.get()) {
             return;
         }
         try {
@@ -140,7 +146,7 @@ public class TcpSocketClient implements AutoCloseable {
     }
 
     private void enqueueHeartbeat() {
-        if (!running.get()) {
+        if (!running.get() || !connectionReady.get()) {
             return;
         }
         try {

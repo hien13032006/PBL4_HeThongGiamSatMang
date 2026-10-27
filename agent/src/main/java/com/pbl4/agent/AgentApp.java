@@ -21,24 +21,22 @@ public class AgentApp {
 
     public static void main(String[] args) {
         AgentConfig config = new AgentConfig();
-
         AgentIdentity identity;
         try {
-            identity = AgentIdentity.loadOrCreate(config.getAgentId());
+            identity = AgentIdentity.loadOrCreate();
         } catch (Exception e) {
             log.error("Unable to load or persist the agent identity", e);
             System.exit(1);
             return;
         }
 
-        String agentId = identity.agentId();
         String hostname = HostInfo.getHostname();
         HostInfo.NetworkDetails networkDetails = HostInfo.getPrimaryNetworkDetails();
         String os = HostInfo.getOsName();
         Instant now = Instant.now();
 
         AgentRegistration registration = new AgentRegistration(
-                agentId,
+                identity.agentId(),
                 hostname,
                 networkDetails.ipAddress(),
                 networkDetails.macAddress(),
@@ -53,6 +51,7 @@ public class AgentApp {
 
         try {
             String json = objectMapper.writeValueAsString(registration);
+            log.info("Agent identity loaded: {}", identity.agentId());
             log.info("Agent config loaded. Server host={}, port={}", config.getServerHost(), config.getServerPort());
             log.info("Agent registration payload: {}", json);
         } catch (Exception e) {

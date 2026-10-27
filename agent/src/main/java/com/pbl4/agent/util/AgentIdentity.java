@@ -6,55 +6,47 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.Properties;
+import java.util.UUID;
 
 public record AgentIdentity(String agentId, String createdAt) {
     private static final String ID_KEY = "agent.id";
     private static final String CREATED_AT_KEY = "agent.created-at";
 
     public static AgentIdentity loadOrCreate() throws IOException {
-        return loadOrCreate("Agent0001");
-    }
-
-    public static AgentIdentity loadOrCreate(String configuredAgentId) throws IOException {
         String userHome = System.getProperty("user.home");
         if (userHome == null || userHome.isBlank()) {
             throw new IOException("Cannot persist agent identity because user.home is not set");
         }
-        return loadOrCreate(Path.of(userHome, ".pbl4-agent", "identity.properties"), configuredAgentId);
+        return loadOrCreate(Path.of(userHome, ".pbl4-agent", "identity.properties"));
     }
 
     static AgentIdentity loadOrCreate(Path identityFile) throws IOException {
-        return loadOrCreate(identityFile, "Agent0001");
-    }
-
-    static AgentIdentity loadOrCreate(Path identityFile, String configuredAgentId) throws IOException {
-        validateAgentId(configuredAgentId);
         if (Files.exists(identityFile)) {
             AgentIdentity existing = read(identityFile);
-            if (existing.agentId().equals(configuredAgentId)) {
+            if (isUuid(existing.agentId())) {
                 return existing;
             }
 
-            AgentIdentity updated = new AgentIdentity(configuredAgentId, existing.createdAt());
+            AgentIdentity updated = new AgentIdentity(UUID.randomUUID().toString(), existing.createdAt());
             storeAtomically(identityFile, updated);
             return updated;
         }
 
         Files.createDirectories(identityFile.getParent());
-        AgentIdentity identity = new AgentIdentity(configuredAgentId,
-                java.time.Instant.now().toString());
+        AgentIdentity identity = new AgentIdentity(UUID.randomUUID().toString(), Instant.now().toString());
         Properties properties = toProperties(identity);
         try (var output = Files.newOutputStream(identityFile, java.nio.file.StandardOpenOption.CREATE_NEW)) {
             properties.store(output, "PBL4 network agent identity");
             return identity;
         } catch (FileAlreadyExistsException e) {
             AgentIdentity existing = read(identityFile);
-            if (existing.agentId().equals(configuredAgentId)) {
+            if (isUuid(existing.agentId())) {
                 return existing;
             }
 
-            AgentIdentity updated = new AgentIdentity(configuredAgentId, existing.createdAt());
+            AgentIdentity updated = new AgentIdentity(UUID.randomUUID().toString(), existing.createdAt());
             storeAtomically(identityFile, updated);
             return updated;
         }
@@ -71,17 +63,24 @@ public record AgentIdentity(String agentId, String createdAt) {
             throw new IOException("Agent identity file is missing agent.id or agent.created-at: " + identityFile);
         }
         try {
-            validateAgentId(agentId);
-            java.time.Instant.parse(createdAt);
+            if (agentId.length() > 50) {
+                throw new IllegalArgumentException("Agent ID exceeds the supported length");
+            }
+            Instant.parse(createdAt);
         } catch (RuntimeException e) {
             throw new IOException("Agent identity file contains an invalid ID or creation time: " + identityFile, e);
         }
         return new AgentIdentity(agentId, createdAt);
     }
 
-    private static void validateAgentId(String agentId) {
-        if (agentId == null || !agentId.matches("[A-Za-z0-9_-]{1,50}")) {
-            throw new IllegalArgumentException("Agent ID must contain 1 to 50 letters, digits, '_' or '-'");
+    private static boolean isUuid(String agentId) {
+        if (agentId == null) {
+            return false;
+        }
+        try {
+            return UUID.fromString(agentId).toString().equals(agentId);
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 

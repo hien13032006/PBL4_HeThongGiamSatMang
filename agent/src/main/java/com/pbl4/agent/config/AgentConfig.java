@@ -76,14 +76,6 @@ public class AgentConfig {
         return getString("ping.target", "8.8.8.8");
     }
 
-    public String getAgentId() {
-        String agentId = getString("agent.id", "Agent0001").trim();
-        if (!agentId.matches("[A-Za-z0-9_-]{1,50}")) {
-            throw new IllegalArgumentException("agent.id must contain 1 to 50 letters, digits, '_' or '-'");
-        }
-        return agentId;
-    }
-
     public int getProbeIntervalMs() {
         return positiveInt("probe.interval.ms", 3000);
     }
