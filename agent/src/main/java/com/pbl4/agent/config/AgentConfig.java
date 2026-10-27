@@ -26,11 +26,22 @@ public class AgentConfig {
     }
 
     public String getString(String key, String defaultValue) {
+        String systemValue = System.getProperty(key);
+        if (systemValue != null && !systemValue.isBlank()) {
+            return systemValue;
+        }
+
+        String environmentKey = "PBL4_" + key.toUpperCase(java.util.Locale.ROOT).replace('.', '_');
+        String environmentValue = System.getenv(environmentKey);
+        if (environmentValue != null && !environmentValue.isBlank()) {
+            return environmentValue;
+        }
+
         return properties.getProperty(key, defaultValue);
     }
 
     public int getInt(String key, int defaultValue) {
-        return Integer.parseInt(properties.getProperty(key, String.valueOf(defaultValue)));
+        return Integer.parseInt(getString(key, String.valueOf(defaultValue)));
     }
 
     public String getServerHost() {
@@ -63,5 +74,21 @@ public class AgentConfig {
 
     public String getPingTarget() {
         return getString("ping.target", "8.8.8.8");
+    }
+
+    public String getAgentId() {
+        String agentId = getString("agent.id", "Agent0001").trim();
+        if (!agentId.matches("[A-Za-z0-9_-]{1,50}")) {
+            throw new IllegalArgumentException("agent.id must contain 1 to 50 letters, digits, '_' or '-'");
+        }
+        return agentId;
+    }
+
+    public int getProbeIntervalMs() {
+        return positiveInt("probe.interval.ms", 3000);
+    }
+
+    public int getProbeTimeoutMs() {
+        return positiveInt("probe.timeout.ms", 1000);
     }
 }

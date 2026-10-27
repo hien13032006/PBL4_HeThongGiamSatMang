@@ -7,6 +7,7 @@ import com.sun.jna.WString;
 import org.pcap4j.core.*;
 import org.pcap4j.packet.Packet;
 import org.pcap4j.packet.IpV4Packet;
+import org.pcap4j.packet.IpV6Packet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,6 +28,7 @@ public class PacketCaptureService implements AutoCloseable {
     private final AtomicLong txBytes = new AtomicLong();
     private final AtomicLong totalPackets = new AtomicLong();
     private final AtomicLong rxPackets = new AtomicLong();
+    private final AtomicLong txPackets = new AtomicLong();
     private final Set<InetAddress> localAddresses = ConcurrentHashMap.newKeySet();
     private final List<PcapHandle> handles = new ArrayList<>();
     private volatile boolean running = true;
@@ -48,21 +50,28 @@ public class PacketCaptureService implements AutoCloseable {
             configureNpcapLibraryPath();
 
             for (PcapNetworkInterface device : Pcaps.findAllDevs()) {
-                var ipv4Addresses = device.getAddresses().stream()
+                var addresses = device.getAddresses().stream()
                         .map(PcapAddress::getAddress)
-                        .filter(java.net.Inet4Address.class::isInstance)
                         .toList();
-                if (!ipv4Addresses.isEmpty()) {
-                    localAddresses.addAll(ipv4Addresses);
+                if (addresses.isEmpty()) {
+                    continue;
+                }
+
+                localAddresses.addAll(addresses);
+                try {
                     PcapHandle handle = device.openLive(65536, PcapNetworkInterface.PromiscuousMode.PROMISCUOUS, 10);
                     handles.add(handle);
                     Thread captureThread = new Thread(() -> captureLoop(handle), "packet-capture-" + device.getName());
                     captureThread.setDaemon(true);
                     captureThread.start();
                     log.info("Started packet capture on interface {}", device.getName());
+                } catch (PcapNativeException | UnsatisfiedLinkError e) {
+                    log.warn("Unable to start packet capture on interface {}", device.getName(), e);
                 }
             }
-            log.info("No suitable network interface was available for packet capture; continuing in demo mode without live packet tracing.");
+            if (handles.isEmpty()) {
+                log.warn("No network interface was available for packet capture.");
+            }
         } catch (PcapNativeException | UnsatisfiedLinkError e) {
             log.warn("Pcap4J cannot open the network interface. This is expected on machines without Npcap/libpcap support; continuing without packet capture.", e);
         }
@@ -124,25 +133,36 @@ public class PacketCaptureService implements AutoCloseable {
                     continue;
                 }
 
-                totalPackets.incrementAndGet();
-                byte[] data = packet.getRawData();
-                long packetLength = data == null ? 0 : data.length;
-
                 if (packet.contains(IpV4Packet.class)) {
                     var ip = packet.get(IpV4Packet.class);
-                    boolean incoming = localAddresses.contains(ip.getHeader().getDstAddr());
-                    boolean outgoing = localAddresses.contains(ip.getHeader().getSrcAddr());
-                    if (incoming) {
-                        rxBytes.addAndGet(packetLength);
-                        rxPackets.incrementAndGet();
-                    }
-                    if (outgoing) {
-                        txBytes.addAndGet(packetLength);
-                    }
+                    recordPacket(packet, ip.getHeader().getSrcAddr(), ip.getHeader().getDstAddr());
+                } else if (packet.contains(IpV6Packet.class)) {
+                    var ip = packet.get(IpV6Packet.class);
+                    recordPacket(packet, ip.getHeader().getSrcAddr(), ip.getHeader().getDstAddr());
                 }
             }
         } catch (Exception e) {
             log.warn("Packet capture loop ended unexpectedly; continuing without live packet tracing.", e);
+        }
+    }
+
+    private void recordPacket(Packet packet, InetAddress source, InetAddress destination) {
+        byte[] data = packet.getRawData();
+        long packetLength = data == null ? 0 : data.length;
+        boolean incoming = localAddresses.contains(destination);
+        boolean outgoing = localAddresses.contains(source);
+        if (!incoming && !outgoing) {
+            return;
+        }
+
+        totalPackets.incrementAndGet();
+        if (incoming) {
+            rxBytes.addAndGet(packetLength);
+            rxPackets.incrementAndGet();
+        }
+        if (outgoing) {
+            txBytes.addAndGet(packetLength);
+            txPackets.incrementAndGet();
         }
     }
 
@@ -160,6 +180,10 @@ public class PacketCaptureService implements AutoCloseable {
 
     public long getRxPackets() {
         return rxPackets.get();
+    }
+
+    public long getTxPackets() {
+        return txPackets.get();
     }
 
     public void stop() {

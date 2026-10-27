@@ -1,39 +1,35 @@
 package com.pbl4.agent.model;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;
-
-import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class AgentRegistration {
+    private String type;
     private String agentId;
     private String hostname;
     private String ipAddress;
     private String macAddress;
     private String os;
     private String nicName;
-    private String status;
-    @JsonFormat(shape = JsonFormat.Shape.STRING)
-    private Instant createdAt;
-    @JsonFormat(shape = JsonFormat.Shape.STRING)
-    private Instant lastSeen;
+    private long timestamp;
 
     public AgentRegistration() {
     }
 
     public AgentRegistration(String agentId, String hostname, String ipAddress, String macAddress,
-                            String os, String nicName, String status, Instant createdAt, Instant lastSeen) {
+                            String os, String nicName, long timestamp) {
+        this.type = "REGISTER";
         this.agentId = agentId;
         this.hostname = hostname;
         this.ipAddress = ipAddress;
         this.macAddress = macAddress;
         this.os = os;
         this.nicName = nicName;
-        this.status = status;
-        this.createdAt = createdAt;
-        this.lastSeen = lastSeen;
+        this.timestamp = timestamp;
     }
+
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
 
     public String getAgentId() { return agentId; }
     public void setAgentId(String agentId) { this.agentId = agentId; }
@@ -53,12 +49,6 @@ public class AgentRegistration {
     public String getNicName() { return nicName; }
     public void setNicName(String nicName) { this.nicName = nicName; }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-
-    public Instant getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-
-    public Instant getLastSeen() { return lastSeen; }
-    public void setLastSeen(Instant lastSeen) { this.lastSeen = lastSeen; }
+    public long getTimestamp() { return timestamp; }
+    public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
 }

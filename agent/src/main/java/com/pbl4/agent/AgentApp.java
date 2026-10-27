@@ -24,7 +24,7 @@ public class AgentApp {
 
         AgentIdentity identity;
         try {
-            identity = AgentIdentity.loadOrCreate();
+            identity = AgentIdentity.loadOrCreate(config.getAgentId());
         } catch (Exception e) {
             log.error("Unable to load or persist the agent identity", e);
             System.exit(1);
@@ -44,9 +44,7 @@ public class AgentApp {
                 networkDetails.macAddress(),
                 os,
                 networkDetails.nicName(),
-                "ONLINE",
-                Instant.parse(identity.createdAt()),
-                now
+                now.toEpochMilli()
         );
 
         ObjectMapper objectMapper = new ObjectMapper();
@@ -74,6 +72,8 @@ public class AgentApp {
                 metricsService)) {
             packetCaptureService.start();
             client.start();
+            client.startConnectivityProbes(config.getPingTarget(), config.getProbeIntervalMs(),
+                    config.getProbeTimeoutMs());
             new CountDownLatch(1).await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

@@ -61,17 +61,26 @@ public class TcpSocketClient implements AutoCloseable {
         reconnectThread.start();
 
         scheduler.scheduleAtFixedRate(this::enqueueMetric, collectIntervalMs, collectIntervalMs, TimeUnit.MILLISECONDS);
-        scheduler.scheduleAtFixedRate(this::enqueueHeartbeat, 5, 5, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(this::enqueueHeartbeat, 3, 3, TimeUnit.SECONDS);
+    }
+
+    public void startConnectivityProbes(String target, int intervalMs, int timeoutMs) {
+        scheduler.scheduleAtFixedRate(() -> {
+            if (running.get()) {
+                metricsService.probeConnectivity(target, timeoutMs);
+            }
+        }, 0, intervalMs, TimeUnit.MILLISECONDS);
     }
 
     private void connectionLoop() {
+        long retryDelayMs = reconnectDelayMs;
         while (running.get()) {
             try (Socket socket = new Socket()) {
                 socket.connect(new InetSocketAddress(host, port), 3000);
+                retryDelayMs = reconnectDelayMs;
                 try (PrintWriter writer = new PrintWriter(socket.getOutputStream(), true, StandardCharsets.UTF_8);
                      BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
                     log.info("Connected to TCP server {}:{}", host, port);
-                    registration.setLastSeen(Instant.now());
                     sendMessage(writer, writeAsJson(registration));
 
                     while (running.get() && !socket.isClosed()) {
@@ -91,11 +100,12 @@ public class TcpSocketClient implements AutoCloseable {
                     }
                 }
             } catch (Exception e) {
-                log.warn("TCP connection failed for {}:{}, retrying in {} ms", host, port, reconnectDelayMs, e);
+                log.warn("TCP connection failed for {}:{}, retrying in {} ms", host, port, retryDelayMs, e);
             }
 
             try {
-                Thread.sleep(reconnectDelayMs);
+                Thread.sleep(retryDelayMs);
+                retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -112,15 +122,16 @@ public class TcpSocketClient implements AutoCloseable {
 
             MetricDataPacket packet = new MetricDataPacket(
                     agentId,
-                    Instant.now(),
-                    snapshot.rxRate(),
-                    snapshot.txRate(),
-                    snapshot.rxPacketRate(),
-                    null,
-                    null,
-                    metricsService.getPacketCaptureService().getRxBytes(),
-                    metricsService.getPacketCaptureService().getTxBytes(),
-                    metricsService.getPacketCaptureService().getTotalPackets()
+                    Instant.now().toEpochMilli(),
+                    new MetricDataPacket.Metrics(
+                            snapshot.rxRate(),
+                            snapshot.txRate(),
+                            snapshot.totalRx(),
+                            snapshot.totalTx(),
+                            packetRateAsInteger(snapshot.rxPacketRate()),
+                            packetRateAsInteger(snapshot.txPacketRate()),
+                            snapshot.latency(),
+                            snapshot.packetLoss())
             );
             enqueue(writeAsJson(packet));
         } catch (Exception e) {
@@ -133,8 +144,7 @@ public class TcpSocketClient implements AutoCloseable {
             return;
         }
         try {
-            registration.setLastSeen(Instant.now());
-            enqueue(writeAsJson(new HeartbeatPacket(agentId, "heartbeat", registration.getLastSeen(), true)));
+            enqueue(writeAsJson(new HeartbeatPacket(agentId, "PING", Instant.now().toEpochMilli())));
         } catch (Exception e) {
             log.error("Failed to prepare heartbeat packet", e);
         }
@@ -142,8 +152,17 @@ public class TcpSocketClient implements AutoCloseable {
 
     private void enqueue(String message) {
         if (!outboundQueue.offer(message)) {
-            log.warn("Outbound queue is full; dropping the newest message for agent {}", agentId);
+            outboundQueue.poll();
+            if (!outboundQueue.offer(message)) {
+                log.warn("Outbound queue is full; dropping message for agent {}", agentId);
+            } else {
+                log.warn("Outbound queue is full; dropped the oldest message for agent {}", agentId);
+            }
         }
+    }
+
+    private int packetRateAsInteger(double packetRate) {
+        return (int) Math.min(Integer.MAX_VALUE, Math.round(packetRate));
     }
 
     private String writeAsJson(Object payload) throws IOException {
