@@ -262,7 +262,7 @@ body.dark .ws-status-disconnected {
 .card {
     background-color: var(--bg-card);
     padding: 20px;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
 }
 
@@ -291,7 +291,7 @@ body.dark .ws-status-disconnected {
     gap: 20px;
     background-color: var(--bg-card);
     padding: 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
 }
 
@@ -324,7 +324,7 @@ body.dark .ws-status-disconnected {
 .btn-reset {
     padding: 8px 16px;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 5px;
     background: transparent;
     color: var(--text-primary);
     font-size: 12px;
@@ -339,7 +339,7 @@ body.dark .ws-status-disconnected {
    ========================================================================== */
 .table-card {
     background-color: var(--bg-card);
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     overflow: hidden;
 }
@@ -429,18 +429,24 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 
 
 /* ==========================================================================
-   6. AGENT PROFILE BANNER & 8 MINI CARDS (CHITIETAGENT.HTML)
+   AGENT PROFILE BANNER & 8 MINI CARDS (CHITIETAGENT.HTML)
    ========================================================================== */
 .agent-selector-wrapper {
     display: flex;
     align-items: center;
     gap: 12px;
 }
+.form-select {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
 
 .agent-profile-card {
     background-color: var(--bg-card);
     border: 1px solid var(--border-color);
-    border-radius: 14px;
+    border-radius: 8px;
     padding: 20px 24px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
@@ -482,7 +488,7 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
     color: var(--brand-teal);
     background-color: var(--brand-teal-light);
     padding: 2px 8px;
-    border-radius: 6px;
+    border-radius: 3px;
 }
 
 .profile-timestamp {
@@ -530,7 +536,7 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 .metric-mini-card {
     background-color: var(--bg-card);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 16px;
     display: flex;
     flex-direction: column;
@@ -552,8 +558,8 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 }
 
 .metric-mini-value {
-    font-size: 22px;
-    font-weight: 800;
+    font-size: 25px;
+    font-weight: 700;
     color: var(--text-primary);
 }
 
@@ -570,12 +576,10 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
     margin-left: 6px;
 }
 
-.text-teal { color: var(--brand-teal); }
-.text-amber { color: #d97706; }
-.text-green { color: #10b981; }
+
 
 /* ==========================================================================
-   7. REALTIME CHARTS GRID
+   REALTIME CHARTS GRID
    ========================================================================== */
 .charts-grid {
     display: grid;
@@ -585,7 +589,7 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 
 .chart-card {
     background-color: var(--bg-card);
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     padding: 24px;
     display: flex;
@@ -602,7 +606,7 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 
 .chart-container {
     position: relative;
-    height: 320px; /* Tăng chiều cao lên 320px để biểu đồ dàn ngang hiển thị cực kỳ rõ nét */
+    height: 320px; 
     width: 100%;
 }
 
@@ -615,7 +619,7 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 }
 
 /* ==========================================================================
-   8. RESPONSIVE MEDIA QUERIES
+   RESPONSIVE MEDIA QUERIES
    ========================================================================== */
 @media (max-width: 1200px) {
     .charts-grid {
@@ -646,4 +650,107 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
     .profile-grid, .metrics-summary-grid {
         grid-template-columns: 1fr;
     }
+}
+
+
+/* ==========================================================================
+   STYLING RIÊNG CHO TRANG LỊCH SỬ METRICS
+   ========================================================================== */
+.history-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px;
+    background-color: var(--bg-card);
+    padding: 18px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    flex-wrap: nowrap; 
+    overflow-x: auto;
+}
+
+.filter-item-agent {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 220px; /* Cố định chiều rộng tối đa cho ô Agent */
+    min-width: 150px;
+}
+
+.filter-item-agent select {
+    text-overflow: ellipsis; /* Hiển thị dấu ... khi chữ quá dài */
+    white-space: nowrap;
+    overflow: hidden;
+    width: 100%;
+}
+
+.filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0; /* Không bị co ép lại quá nhỏ */
+}
+
+.btn-search-wrapper {
+    margin-bottom: 0;
+}
+
+
+.form-input-time {
+    padding: 7px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--bg-body);
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+}
+
+.btn-primary-teal {
+    background-color: var(--brand-teal);
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 8px 8px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.btn-primary-teal:hover {
+    opacity: 0.9;
+}
+
+.quick-time-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+}
+
+.btn-quick-time {
+    background-color: var(--bg-body);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.btn-quick-time:hover {
+    background-color: var(--bg-hover);
+}
+
+.table-header-info {
+    padding: 14px 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border-color);
 }
