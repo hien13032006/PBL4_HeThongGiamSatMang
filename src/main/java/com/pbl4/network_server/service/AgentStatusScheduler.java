@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,12 +18,13 @@ public class AgentStatusScheduler {
     private AgentRepository agentRepository;
 
     @Autowired
-    private SimpMessagingTemplate messagingTemplate; // Bổ sung bắn WebSocket
+    private SimpMessagingTemplate messagingTemplate;
 
     // Chạy định kỳ 5 giây 1 lần
     @Scheduled(fixedRate = 5000)
+    @Transactional
     public void checkAgentStatus() {
-        // Ngưỡng 10 giây không có dữ liệu/Heartbeat sẽ coi là OFFLINE
+        // Ngưỡng 10 giây không có dữ liệu/LastSeen sẽ coi là OFFLINE
         LocalDateTime threshold = LocalDateTime.now().minusSeconds(10);
         List<Agent> offlineAgents = agentRepository.findByStatusAndLastSeenBefore("ONLINE", threshold);
 
@@ -30,10 +32,9 @@ public class AgentStatusScheduler {
             for (Agent agent : offlineAgents) {
                 agent.setStatus("OFFLINE");
                 agentRepository.save(agent);
-                System.out.println("[CAP NHAT] Agent " + agent.getAgentId() + " da ngat ket noi (OFFLINE).");
+                System.out.println("[SCHEDULER] Agent " + agent.getAgentId() + " quá thời gian Heartbeat -> Chuyển OFFLINE.");
             }
 
-            // Bắn danh sách mới nhất qua WebSocket để UI tự động cập nhật lại mà không cần F5 trang
             messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
         }
     }

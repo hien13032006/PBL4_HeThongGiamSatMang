@@ -264,18 +264,25 @@ body.dark .ws-status-disconnected {
     padding: 20px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
+    min-width: 0;
 }
 
 .card-label {
     font-size: 12px;
     font-weight: 500;
     color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .card-value {
     font-size: 28px;
-    font-weight: 700;
+    font-weight: 800;
     margin-top: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .text-emerald { color: #059669; }

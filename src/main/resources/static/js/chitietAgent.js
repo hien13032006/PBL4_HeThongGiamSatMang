@@ -46,7 +46,7 @@ function updateWsStatusUI(isConnected) {
     }
 }
 
-// 1. Khởi tạo 4 Đồ thị Chart.js theo đúng phối màu trong ảnh mẫu
+// Khởi tạo 4 Đồ thị Chart.js 
 function initCharts() {
     const commonOptions = {
         responsive: true,
@@ -67,7 +67,7 @@ function initCharts() {
         data: {
             labels: [],
             datasets: [
-                { label: 'RX', borderColor: '#0d9488', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'RX', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
                 { label: 'TX', borderColor: '#d97706', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
                 { label: 'Ngưỡng', borderColor: '#ef4444', borderWidth: 1, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
@@ -81,7 +81,7 @@ function initCharts() {
         data: {
             labels: [],
             datasets: [
-                { label: 'Latency', borderColor: '#0d9488', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'Latency', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
                 { label: 'Ngưỡng', borderColor: '#ef4444', borderWidth: 1, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
@@ -94,7 +94,7 @@ function initCharts() {
         data: {
             labels: [],
             datasets: [
-                { label: 'RX packets', borderColor: '#0d9488', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'RX packets', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
                 { label: 'TX packets', borderColor: '#d97706', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 }
             ]
         },
@@ -107,7 +107,7 @@ function initCharts() {
         data: {
             labels: [],
             datasets: [
-                { label: 'Packet Loss', borderColor: '#0d9488', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'Packet Loss', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
                 { label: 'Ngưỡng', borderColor: '#ef4444', borderWidth: 1, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
@@ -115,7 +115,7 @@ function initCharts() {
     });
 }
 
-// 2. Tải danh sách Agent đổ vào Dropdown
+//Tải danh sách Agent đổ vào Dropdown
 async function fetchAgentsList() {
     try {
         const response = await fetch('/api/agents');
@@ -155,12 +155,12 @@ async function selectAgent(agentId) {
     subscribeAgentTopic(agentId);
 }
 
-// Đổ dữ liệu CSDL lên Banner & 8 Thẻ Thống Kê[cite: 8]
+// Đổ dữ liệu CSDL lên Banner & 8 Thẻ Thống Kê
 function renderAgentDataFromDB(data) {
     const agent = data.agent;
     const m = data.latestMetrics;
 
-    // 1. Nạp thông tin Agent Banner
+    // Nạp thông tin Agent Banner
     if (agent) {
         document.getElementById('info-hostname').innerText = agent.hostname || 'N/A';
         document.getElementById('info-agent-id').innerText = agent.agentId || 'N/A';
@@ -174,21 +174,24 @@ function renderAgentDataFromDB(data) {
         dot.className = `profile-badge-status ${agent.status === 'ONLINE' ? 'online' : 'offline'}`;
     }
 
-    // 2. Nạp tổng RX / TX tính từ DB
+    // Nạp tổng RX / TX tính từ DB
     document.getElementById('metric-total-rx').innerText = (data.totalRxGB || '0.00') + ' GB';
     document.getElementById('metric-total-tx').innerText = (data.totalTxGB || '0.00') + ' GB';
 
-    // 3. Nạp thông số bản ghi gần nhất trong DB[cite: 8]
+    // Nạp thông số bản ghi gần nhất trong DB
     if (m) {
-        document.getElementById('metric-rx-rate').innerText = ((m.rxRate || 0) / 1024).toFixed(1) + ' MB/s';
-        document.getElementById('metric-tx-rate').innerText = ((m.txRate || 0) / 1024).toFixed(1) + ' MB/s';
+        const rxMb = Number(m.rxRate || 0).toFixed(2);
+        const txMb = Number(m.txRate || 0).toFixed(2);
+        document.getElementById('metric-rx-rate').innerText = `${rxMb} MB/s`;
+        document.getElementById('metric-tx-rate').innerText = `${txMb} MB/s`;
         document.getElementById('metric-rx-packets').innerHTML = `${m.rxPacketRate || 0} <span class="unit">packets/s</span>`;
         document.getElementById('metric-tx-packets').innerHTML = `${m.txPacketRate || 0} <span class="unit">packets/s</span>`;
-        document.getElementById('metric-latency').innerHTML = `${m.latency || 0} <span class="unit">ms</span>`;
-        document.getElementById('metric-loss-probe').innerHTML = `${m.packetLoss || 0}% <span class="sub-probe">(20/20)</span>`;
+        const latencyFormatted = Number(m.latency || 0).toFixed(2);
+        document.getElementById('metric-latency').innerHTML = `${latencyFormatted} <span class="unit">ms</span>`;
+        document.getElementById('metric-loss-probe').innerHTML = `${(m.packetLoss || 0).toFixed(1)}% <span class="sub-probe">(20/20)</span>`;
     }
 }
-// 3. Kết nối WebSocket
+// Kết nối WebSocket
 function connectWebSocket() {
     updateWsStatusUI(false);
 
@@ -221,23 +224,34 @@ function subscribeAgentTopic(agentId) {
     });
 }
 
-// 4. Nhận dữ liệu real-time và vẽ lên 4 đồ thị
+// Nhận dữ liệu real-time và vẽ lên 4 đồ thị
 function pushMetricToCharts(data) {
     if (!data || !data.metrics) return;
     const m = data.metrics;
     const timeLabel = new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
-    const rxMb = ((m.rxRate || 0) / 1024).toFixed(1);
-    const txMb = ((m.txRate || 0) / 1024).toFixed(1);
+    const rxMb = Number(m.rxRate || 0).toFixed(2);
+    const txMb = Number(m.txRate || 0).toFixed(2);
 
-    // 1. Bandwidth
-    addPoint(bandwidthChart, timeLabel, [rxMb, txMb, 80]); // Ngưỡng 80 MB/s
-    // 2. Latency
-    addPoint(latencyChart, timeLabel, [m.latency || 0, 100]); // Ngưỡng 100 ms
-    // 3. Packet Rate
-    addPoint(packetRateChart, timeLabel, [m.rxPackets || 0, m.txPackets || 0]);
-    // 4. Packet Loss
-    addPoint(packetLossChart, timeLabel, [m.packetLoss || 0, 5]); // Ngưỡng 5%
+    document.getElementById('metric-rx-rate').innerText = `${rxMb} MB/s`;
+    document.getElementById('metric-tx-rate').innerText = `${txMb} MB/s`;
+    document.getElementById('metric-rx-packets').innerHTML = `${m.rxPacketRate || 0} <span class="unit">packets/s</span>`;
+    document.getElementById('metric-tx-packets').innerHTML = `${m.txPacketRate || 0} <span class="unit">packets/s</span>`;
+    
+    const latencyFormatted = Number(m.latency || 0).toFixed(2);
+    document.getElementById('metric-latency').innerHTML = `${latencyFormatted} <span class="unit">ms</span>`;
+
+    // 1. Biểu đồ Băng thông RX / TX
+    addPoint(bandwidthChart, timeLabel, [rxMb, txMb, 80]);
+
+    // 2. Biểu đồ Latency
+    addPoint(latencyChart, timeLabel, [m.latency || 0, 100]);
+
+    // 3. Biểu đồ Packet Rate
+    addPoint(packetRateChart, timeLabel, [m.rxPacketRate || 0, m.txPacketRate || 0]);
+
+    // 4. Biểu đồ Packet Loss
+    addPoint(packetLossChart, timeLabel, [m.packetLoss || 0, 5]);
 }
 
 function addPoint(chart, label, values) {

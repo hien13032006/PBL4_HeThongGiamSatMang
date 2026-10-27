@@ -39,14 +39,20 @@ public class MetricsService {
         String agentId = message.getAgentId();
         String type = message.getType();
 
-        // 1. Xử lý gói tin đăng ký (REGISTER) hoặc tự động đăng ký nếu agent chưa tồn tại
+        //Xử lý gói tin đăng ký (REGISTER) hoặc tự động tạo nếu chưa tồn tại
         Optional<Agent> optionalAgent = agentRepository.findById(agentId);
         Agent agent;
         boolean isNewAgent = false;
+        boolean statusChangedToOnline = false;
 
         if (optionalAgent.isPresent()) {
             agent = optionalAgent.get();
-            agent.setStatus("ONLINE");
+            
+            // Nếu Agent đang ở trạng thái OFFLINE mà gửi tin lên -> Chuyển lại ONLINE
+            if (!"ONLINE".equalsIgnoreCase(agent.getStatus())) {
+                agent.setStatus("ONLINE");
+                statusChangedToOnline = true;
+            }
             agent.setLastSeen(LocalDateTime.now());
             
             if ("REGISTER".equalsIgnoreCase(type)) {
@@ -64,7 +70,7 @@ public class MetricsService {
                     .hostname(message.getHostname() != null ? message.getHostname() : "Unknown")
                     .ipAddress(message.getIpAddress() != null ? message.getIpAddress() : "127.0.0.1")
                     .macAddress(message.getMacAddress() != null ? message.getMacAddress() : "00:00:00:00:00:00")
-                    .os(message.getOs())
+                    .os(message.getOs() != null ? message.getOs() : "Unknown")
                     .nicName(message.getNicName())
                     .status("ONLINE")
                     .lastSeen(LocalDateTime.now())
@@ -73,12 +79,12 @@ public class MetricsService {
             isNewAgent = true;
         }
 
-        // Nếu là gói tin REGISTER hoặc Agent mới, thông báo ngay cho Frontend để cập nhật bảng danh sách
-        if ("REGISTER".equalsIgnoreCase(type) || isNewAgent) {
+        // Chỉ bắn WebSocket `/topic/agents` khi có Agent mới hoặc Agent chuyển trạng thái từ OFFLINE -> ONLINE
+        if ("REGISTER".equalsIgnoreCase(type) || isNewAgent || statusChangedToOnline) {
             messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
         }
 
-        // 2. Nếu message là loại METRICS, tiến hành lưu lịch sử vào bảng metrics_history
+        // Nếu message là loại METRICS, tiến hành lưu lịch sử vào CSDL
         if ("METRICS".equalsIgnoreCase(type) && message.getMetrics() != null) {
             MetricsMessageDto.MetricsDetailDto detail = message.getMetrics();
 
@@ -103,16 +109,14 @@ public class MetricsService {
 
             metricsHistoryRepository.save(history);
 
-            // 3. Kiểm tra ngưỡng cảnh báo (Alert Engine cơ bản)
+            // Kiểm tra ngưỡng cảnh báo 
             checkThresholds(agentId, detail);
 
-            // Bắn dữ liệu real-time tới WebSocket
+            // Chỉ bắn gói tin metric qua channel riêng của Agent đó (Tránh bắn /topic/agents quá nhiều gây lag UI)
             messagingTemplate.convertAndSend("/topic/metrics/" + agentId, message);
-            messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
         }
     }
 
-    // Phương thức kiểm tra các thông số có vượt ngưỡng cho phép không
     private void checkThresholds(String agentId, MetricsMessageDto.MetricsDetailDto detail) {
         if (detail.getLatency() != null && detail.getLatency() > 100.0) {
             System.out.println("[CANH BAO] Agent " + agentId + " co do tre cao: " + detail.getLatency() + " ms!");

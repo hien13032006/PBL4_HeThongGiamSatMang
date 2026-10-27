@@ -39,9 +39,9 @@ public class MetricsMessageDto {
         private Double txRate;      // Tốc độ gửi (KB/s)
         private Long totalRx;       // Tổng dung lượng nhận (Bytes)
         private Long totalTx;       // Tổng dung lượng gửi (Bytes)
-        private Integer rxPacketRate; // Số gói tin nhận mỗi giây (packets/s)[cite: 1]
-        private Integer txPacketRate; // Số gói tin gửi mỗi giây (packets/s)[cite: 1]
-        private Double latency;     // Độ trễ (ms)[cite: 1]
-        private Double packetLoss;  // Tỷ lệ mất gói (%)[cite: 1]
+        private Integer rxPacketRate; // Số gói tin nhận mỗi giây (packets/s)
+        private Integer txPacketRate; // Số gói tin gửi mỗi giây (packets/s)
+        private Double latency;     // Độ trễ (ms)
+        private Double packetLoss;  // Tỷ lệ mất gói (%)
     }
 }
