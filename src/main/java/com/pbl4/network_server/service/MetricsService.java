@@ -85,36 +85,47 @@ public class MetricsService {
         }
 
         // Nếu message là loại METRICS, tiến hành lưu lịch sử vào CSDL
-        if ("METRICS".equalsIgnoreCase(type) && message.getMetrics() != null) {
-            MetricsMessageDto.MetricsDetailDto detail = message.getMetrics();
+        // Trong file MetricsService.java
 
-            // Chuyển đổi timestamp (Long) sang LocalDateTime
-            LocalDateTime logTime;
-            if (message.getTimestamp() != null) {
-                logTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(message.getTimestamp()), ZoneId.systemDefault());
-            } else {
-                logTime = LocalDateTime.now();
-            }
+if ("METRICS".equalsIgnoreCase(type) && message.getMetrics() != null) {
+    MetricsMessageDto.MetricsDetailDto detail = message.getMetrics();
 
-            MetricsHistory history = MetricsHistory.builder()
-                    .agent(agent)
-                    .timestamp(logTime)
-                    .rxRate(detail.getRxRate())
-                    .txRate(detail.getTxRate())
-                    .rxPacketRate(detail.getRxPacketRate())
-                    .txPacketRate(detail.getTxPacketRate())
-                    .latency(detail.getLatency())
-                    .packetLoss(detail.getPacketLoss())
-                    .build();
+    // 1. QUY ĐỔI TỪ KB/s SANG MB/s (Chia cho 1024.0)
+    double rxRateMb = detail.getRxRate() != null ? (detail.getRxRate() / 1024.0) : 0.0;
+    double txRateMb = detail.getTxRate() != null ? (detail.getTxRate() / 1024.0) : 0.0;
 
-            metricsHistoryRepository.save(history);
+    // Cập nhật lại giá trị đã đổi vào DTO để bắn qua WebSocket cho Dashboard chuẩn MB/s
+    detail.setRxRate(rxRateMb);
+    detail.setTxRate(txRateMb);
 
-            // Kiểm tra ngưỡng cảnh báo 
-            checkThresholds(agentId, detail);
+    // 2. Chuyển đổi timestamp
+    LocalDateTime logTime;
+    if (message.getTimestamp() != null) {
+        logTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(message.getTimestamp()), ZoneId.systemDefault());
+    } else {
+        logTime = LocalDateTime.now();
+    }
 
-            // Chỉ bắn gói tin metric qua channel riêng của Agent đó (Tránh bắn /topic/agents quá nhiều gây lag UI)
-            messagingTemplate.convertAndSend("/topic/metrics/" + agentId, message);
-        }
+    // 3. Lưu vào bảng metrics_history (Đã ở đơn vị MB/s)
+    MetricsHistory history = MetricsHistory.builder()
+            .agent(agent)
+            .timestamp(logTime)
+            .rxRate(rxRateMb)
+            .txRate(txRateMb)
+            .rxPacketRate(detail.getRxPacketRate())
+            .txPacketRate(detail.getTxPacketRate())
+            .latency(detail.getLatency())
+            .packetLoss(detail.getPacketLoss())
+            .build();
+
+    metricsHistoryRepository.save(history);
+
+    // 4. Kiểm tra ngưỡng cảnh báo (Sử dụng ngưỡng MB/s)
+    checkThresholds(agentId, detail);
+
+    // 5. Bắn dữ liệu real-time xuống WebSocket (Đã quy đổi MB/s)
+    messagingTemplate.convertAndSend("/topic/metrics/" + agentId, message);
+}
     }
 
     private void checkThresholds(String agentId, MetricsMessageDto.MetricsDetailDto detail) {

@@ -24,10 +24,9 @@ public interface MetricsHistoryRepository extends JpaRepository<MetricsHistory, 
     Optional<MetricsHistory> findTopByAgentAgentIdOrderByTimestampDesc(String agentId);
 
     // 4. Tính tổng RX (KB) tích lũy trong CSDL của Agent
-    @Query("SELECT SUM(m.rxRate) FROM MetricsHistory m WHERE m.agent.agentId = :agentId")
+    @Query("SELECT COALESCE(SUM(m.rxRate), 0.0) FROM MetricsHistory m WHERE m.agent.agentId = :agentId")
     Double sumTotalRxByAgentId(@Param("agentId") String agentId);
-
     // 5. Tính tổng TX (KB) tích lũy trong CSDL của Agent
-    @Query("SELECT SUM(m.txRate) FROM MetricsHistory m WHERE m.agent.agentId = :agentId")
+    @Query("SELECT COALESCE(SUM(m.txRate), 0.0) FROM MetricsHistory m WHERE m.agent.agentId = :agentId")
     Double sumTotalTxByAgentId(@Param("agentId") String agentId);
 }

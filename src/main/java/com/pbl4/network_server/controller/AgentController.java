@@ -9,10 +9,10 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -37,6 +37,7 @@ public class AgentController {
         return metricsHistoryRepository.findTop20ByAgentAgentIdOrderByTimestampDesc(agentId);
     }
 
+    // API 3: Lấy thông tin tóm tắt và tổng dung lượng RX/TX của 1 Agent
     @GetMapping("/agents/{agentId}/summary")
     public ResponseEntity<?> getAgentSummary(@PathVariable String agentId) {
         Agent agent = agentRepository.findById(agentId).orElse(null);
@@ -45,26 +46,32 @@ public class AgentController {
         }
 
         // Lấy bản ghi metrics mới nhất từ DB
-        MetricsHistory latestMetrics = metricsHistoryRepository.findTopByAgentAgentIdOrderByTimestampDesc(agentId).orElse(null);
+        MetricsHistory latestMetrics = metricsHistoryRepository
+                .findTopByAgentAgentIdOrderByTimestampDesc(agentId)
+                .orElse(null);
 
-        // Tính tổng tích lũy RX, TX từ DB (Đổi ra GB)
-        Double totalRxKB = metricsHistoryRepository.sumTotalRxByAgentId(agentId);
-        Double totalTxKB = metricsHistoryRepository.sumTotalTxByAgentId(agentId);
+        // Tính tổng tích lũy RX, TX từ DB (Dữ liệu DB đang là MB/s, chia 1024 để ra GB)
+        Double totalRxMB = metricsHistoryRepository.sumTotalRxByAgentId(agentId);
+        Double totalTxMB = metricsHistoryRepository.sumTotalTxByAgentId(agentId);
 
-        double totalRxGB = (totalRxKB != null) ? totalRxKB / (1024 * 1024) : 0.0;
-        double totalTxGB = (totalTxKB != null) ? totalTxKB / (1024 * 1024) : 0.0;
+        double totalRxGB = (totalRxMB != null) ? (totalRxMB / 1024.0) : 0.0;
+        double totalTxGB = (totalTxMB != null) ? (totalTxMB / 1024.0) : 0.0;
+
+        // Làm tròn 2 chữ số thập phân
+        totalRxGB = Math.round(totalRxGB * 100.0) / 100.0;
+        totalTxGB = Math.round(totalTxGB * 100.0) / 100.0;
 
         // Đóng gói DTO gửi về Frontend
         Map<String, Object> response = new HashMap<>();
         response.put("agent", agent);
         response.put("latestMetrics", latestMetrics);
-        response.put("totalRxGB", String.format("%.2f", totalRxGB));
-        response.put("totalTxGB", String.format("%.2f", totalTxGB));
+        response.put("totalRxGB", totalRxGB);
+        response.put("totalTxGB", totalTxGB);
 
         return ResponseEntity.ok(response);
     }
 
-    // API 3: Tra cứu lịch sử Metrics từ Database theo khoảng thời gian
+    // API 4: Tra cứu lịch sử Metrics từ Database theo khoảng thời gian
     @GetMapping("/history")
     public ResponseEntity<?> getMetricsHistory(
             @RequestParam("agentId") String agentId,
