@@ -1,16 +1,38 @@
 let historyChart = null;
 let stompClient = null;
 
+// Các biến quản lý chu kỳ chạy tự động (
+let animationInterval = null;
+let isHovered = false;
+let globalDataList = [];
+let currentStartIndex = 0;
+const WINDOW_SIZE = 60;
+
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initHistoryChart();
-    fetchAgentDropdown();
-    connectWebSocket(); 
+    
+    // Nạp danh sách Agent, sau đó tự động tra cứu 1 phút gần nhất
+    fetchAgentDropdown().then(() => {
+        setDefaultOneMinuteRange();
+    });
 
-    // Mặc định chọn 5 phút gần nhất khi mở trang
-    setQuickTime(5);
+    connectWebSocket();
 
-    document.getElementById('btn-search-history').addEventListener('click', performQuery);
+    const searchBtn = document.getElementById('btn-search-history');
+    if (searchBtn) {
+        searchBtn.addEventListener('click', performQuery);
+    }
+
+    const canvas = document.getElementById('historyChart');
+    if (canvas) {
+        canvas.addEventListener('mouseenter', () => {
+            isHovered = true; // Đánh dấu dừng animation khi di chuột vào
+        });
+        canvas.addEventListener('mouseleave', () => {
+            isHovered = false; // Tiếp tục chạy khi rời chuột
+        });
+    }
 });
 
 function initThemeToggle() {
@@ -22,7 +44,7 @@ function initThemeToggle() {
     }
 }
 
-// 1. Hàm cập nhật giao diện WebSocket Status Component trên Top Header
+// 1. Cập nhật trạng thái WebSocket trên Top Header
 function updateWsStatusUI(isConnected) {
     const container = document.getElementById('ws-status-container');
     if (!container) return;
@@ -49,7 +71,7 @@ function updateWsStatusUI(isConnected) {
     }
 }
 
-// 2. Khởi tạo kết nối WebSocket với Spring Boot Backend
+// 2. Kết nối WebSocket
 function connectWebSocket() {
     updateWsStatusUI(false);
 
@@ -60,24 +82,21 @@ function connectWebSocket() {
 
     const socket = new SockJS('/ws-network-monitor');
     stompClient = Stomp.over(socket);
-    stompClient.debug = null; // Tắt log debug trên Console
+    stompClient.debug = null;
 
     stompClient.connect({}, function () {
         updateWsStatusUI(true);
 
-        // Đăng ký nhận thông báo thay đổi Agent hoặc Alert nếu cần
         stompClient.subscribe('/topic/agents', function () {
-            // Khi có sự kiện kết nối mới, tự động nạp lại danh sách Dropdown
             fetchAgentDropdown();
         });
     }, function () {
         updateWsStatusUI(false);
-        // Tự động thử kết nối lại sau 5 giây nếu mất kết nối
         setTimeout(connectWebSocket, 5000);
     });
 }
 
-// 3. Khởi tạo Đồ thị Lịch sử (Chart.js)
+// 3. Khởi tạo Đồ thị Chart.js
 function initHistoryChart() {
     const canvas = document.getElementById('historyChart');
     if (!canvas) return;
@@ -90,34 +109,91 @@ function initHistoryChart() {
             datasets: [
                 {
                     label: 'RX (MB/s)',
-                    borderColor: '#0d9488',
+                    borderColor: '#2980b9',
+                    backgroundColor: 'rgba(41, 128, 185, 0.15)',
+                    fill: true,
                     borderWidth: 2,
                     data: [],
-                    pointRadius: 2,
-                    tension: 0.2
+                    pointRadius: 1,
+                    pointHoverRadius: 5,
+                    tension: 0.3
                 },
                 {
                     label: 'TX (MB/s)',
                     borderColor: '#d97706',
+                    backgroundColor: 'rgba(217, 119, 6, 0.15)',
+                    fill: true,
                     borderWidth: 2,
                     data: [],
-                    pointRadius: 2,
-                    tension: 0.2
+                    pointRadius: 1,
+                    pointHoverRadius: 5,
+                    tension: 0.3
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: {
+                duration: 300 
+            },
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: { display: false }, 
+                tooltip: {
+                    enabled: true,
+                    callbacks: {
+                        title: function(context) {
+                            const index = context[0].dataIndex;
+                            const slice = globalDataList.slice(currentStartIndex, currentStartIndex + WINDOW_SIZE);
+                            if (slice[index] && slice[index].timestamp) {
+                                return slice[index].timestamp.replace('T', ' ').substring(0, 19);
+                            }
+                            return context[0].label;
+                        },
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.raw} MB/s`;
+                        }
+                    }
+                }
+            },
             scales: {
-                x: { grid: { display: false } },
-                y: { beginAtZero: true, grid: { color: 'rgba(200, 200, 200, 0.15)' } }
+                x: { 
+                    grid: { display: false },
+                    ticks: { 
+                        maxRotation: 0, 
+                        minRotation: 0,
+                        autoSkip: false,
+                        font: { size: 11, weight: '600' },
+                        callback: function(val, index) {
+                            const totalLabels = this.chart.data.labels.length;
+                    
+                            if (index === 0 || index === totalLabels - 1) {
+                                return this.getLabelForValue(val);
+                            }
+                            return ''; 
+                        }
+                    }
+                },
+                y: { 
+                    beginAtZero: true,
+                    grid: { color: 'rgba(200, 200, 200, 0.15)' },
+                    ticks: {
+                        font: { size: 11, weight: '600' },
+                        callback: function(val) {
+                            return val.toFixed(1);
+                        }
+                    }
+                }
             }
         }
     });
 }
 
-// 4. Tải danh sách Agent từ DB nạp vào Dropdown
+// 4. Nạp danh sách Agent
 async function fetchAgentDropdown() {
     try {
         const response = await fetch('/api/agents');
@@ -141,24 +217,22 @@ async function fetchAgentDropdown() {
         if (currentVal && Array.from(select.options).some(opt => opt.value === currentVal)) {
             select.value = currentVal;
         }
-
-        performQuery();
     } catch (err) {
         console.error("Lỗi lấy danh sách Agent:", err);
     }
 }
 
-// 5. Nút chọn nhanh mốc thời gian (1 phút, 5 phút, 15 phút)
-function setQuickTime(minutes) {
+// 5. Mặc định chọn 1 phút gần nhất
+function setDefaultOneMinuteRange() {
     const now = new Date();
-    const past = new Date(now.getTime() - minutes * 60 * 1000);
+    const pastOneMin = new Date(now.getTime() - 1 * 60 * 1000);
 
     const startElem = document.getElementById('history-start-time');
     const endElem = document.getElementById('history-end-time');
 
     if (startElem && endElem) {
         endElem.value = formatDateForInput(now);
-        startElem.value = formatDateForInput(past);
+        startElem.value = formatDateForInput(pastOneMin);
         performQuery();
     }
 }
@@ -168,7 +242,7 @@ function formatDateForInput(date) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-// 6. Thực hiện truy vấn dữ liệu từ MySQL qua API
+// 6. Gọi API tra cứu
 async function performQuery() {
     const select = document.getElementById('history-agent-select');
     const startElem = document.getElementById('history-start-time');
@@ -182,12 +256,15 @@ async function performQuery() {
 
     if (!agentId || !startTimeVal || !endTimeVal) return;
 
-    const startIso = new Date(startTimeVal).toISOString().slice(0, 19);
-    const endIso = new Date(endTimeVal).toISOString().slice(0, 19);
+    const startIso = startTimeVal + ":00";
+    const endIso = endTimeVal + ":00";
 
     try {
-        const res = await fetch(`/api/history?agentId=${agentId}&start=${startIso}&end=${endIso}`);
-        if (!res.ok) return;
+        const res = await fetch(`/api/history?agentId=${encodeURIComponent(agentId)}&start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`);
+        if (!res.ok) {
+            console.error("API trả về lỗi:", res.status);
+            return;
+        }
 
         const result = await res.json();
         renderHistoryData(result);
@@ -196,56 +273,102 @@ async function performQuery() {
     }
 }
 
-// 7. Đổ dữ liệu CSDL lên Đồ thị & Bảng dữ liệu
+// 7. Đổ dữ liệu & Khởi chạy Chu kỳ lướt sóng (Sliding Animation)
 function renderHistoryData(result) {
-    const dataList = result.data || [];
+    globalDataList = result.data || [];
     const tbody = document.getElementById('history-table-body');
     const summaryInfo = document.getElementById('table-summary-info');
 
     if (!tbody || !summaryInfo) return;
 
     tbody.innerHTML = '';
-
     const startStr = document.getElementById('history-start-time').value.replace('T', ' ');
     const endStr = document.getElementById('history-end-time').value.replace('T', ' ');
-    summaryInfo.innerText = `Agent ${result.agentId} · ${dataList.length} bản ghi từ ${startStr} đến ${endStr}`;
+    summaryInfo.innerText = `Agent ${result.agentId || ''} · ${globalDataList.length} bản ghi từ ${startStr} đến ${endStr}`;
 
-    const labels = [];
-    const rxData = [];
-    const txData = [];
+    if (animationInterval) {
+        clearInterval(animationInterval);
+        animationInterval = null;
+    }
 
-    // Nạp dữ liệu vào bảng (Mới nhất nằm trên cùng)
-    [...dataList].reverse().forEach(item => {
-        const timeFormatted = item.timestamp ? item.timestamp.replace('T', ' ') : '--';
-        const rxMb = ((item.rxRate || 0) / 1024).toFixed(1);
-        const txMb = ((item.txRate || 0) / 1024).toFixed(1);
+    if (globalDataList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-secondary); padding: 20px;">Không có dữ liệu lịch sử trong khoảng thời gian này</td></tr>`;
+        if (historyChart) {
+            historyChart.data.labels = [];
+            historyChart.data.datasets[0].data = [];
+            historyChart.data.datasets[1].data = [];
+            historyChart.update();
+        }
+        return;
+    }
+
+    // A. BẢNG DỮ LIỆU: Đổ toàn bộ bản ghi (Mới nhất nằm trên)
+    [...globalDataList].reverse().forEach(item => {
+        const timeFormatted = item.timestamp ? item.timestamp.replace('T', ' ').substring(0, 19) : '--';
+        const rxMb = Number(item.rxRate || 0).toFixed(3);
+        const txMb = Number(item.txRate || 0).toFixed(3);
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="font-mono">${timeFormatted}</td>
-            <td class="font-bold">${item.agent ? item.agent.agentId : result.agentId}</td>
-            <td class="text-right font-semibold">${rxMb}</td>
-            <td class="text-right font-semibold">${txMb}</td>
+            <td class="font-bold">${result.agentId}</td>
+            <td class="text-right font-semibold" style="color: #2980b9;">${rxMb}</td>
+            <td class="text-right font-semibold" style="color: #d97706;">${txMb}</td>
             <td class="text-right">${item.rxPacketRate || 0}</td>
             <td class="text-right">${item.txPacketRate || 0}</td>
-            <td class="text-right">${item.latency || 0}</td>
-            <td class="text-right">${(item.packetLoss || 0).toFixed(1)}</td>
+            <td class="text-right">${item.latency ? item.latency.toFixed(1) : 0}</td>
+            <td class="text-right">${(item.packetLoss || 0).toFixed(1)}%</td>
         `;
         tbody.appendChild(tr);
     });
 
-    // Nạp dữ liệu vào Đồ thị
-    dataList.forEach(item => {
-        const timeShort = item.timestamp ? item.timestamp.split('T')[1].substring(0, 8) : '';
-        labels.push(timeShort);
-        rxData.push(((item.rxRate || 0) / 1024).toFixed(1));
-        txData.push(((item.txRate || 0) / 1024).toFixed(1));
+    // B. ĐỒ THỊ SLIDING WINDOW
+    currentStartIndex = 0;
+    updateChartWindow(); // Nạp ô cửa sổ dữ liệu đầu tiên
+
+    // Nếu số lượng bản ghi lớn hơn kích thước cửa sổ (60 mẫu), kích hoạt chu kỳ chạy trượt qua lại mỗi 1 giây
+    if (globalDataList.length > WINDOW_SIZE) {
+        animationInterval = setInterval(() => {
+            // Nếu người dùng ĐANG rê chuột vào biểu đồ -> Tạm dừng không trượt
+            if (isHovered) return;
+
+            currentStartIndex++;
+            // Khi trượt tới bản ghi cuối cùng, tự động quay lại đầu chu kỳ
+            if (currentStartIndex > globalDataList.length - WINDOW_SIZE) {
+                currentStartIndex = 0;
+            }
+            updateChartWindow();
+        }, 1000); 
+    }
+}
+
+function updateChartWindow() {
+    if (!historyChart || globalDataList.length === 0) return;
+
+    const currentSlice = globalDataList.slice(currentStartIndex, currentStartIndex + WINDOW_SIZE);
+    const labels = [];
+    const rxData = [];
+    const txData = [];
+
+    currentSlice.forEach(item => {
+        if (!item.timestamp) return;
+        let timeLabel = '';
+        if (item.timestamp.includes('T')) {
+            const parts = item.timestamp.split('T');
+            const datePart = parts[0].substring(5); // MM-DD
+            const timePart = parts[1].substring(0, 8); // HH:mm:ss
+            timeLabel = globalDataList.length > 500 ? `${datePart} ${timePart.substring(0, 5)}` : timePart;
+        }
+
+        labels.push(timeLabel);
+        rxData.push(Number(item.rxRate || 0).toFixed(3));
+        txData.push(Number(item.txRate || 0).toFixed(3));
     });
 
-    if (historyChart) {
-        historyChart.data.labels = labels;
-        historyChart.data.datasets[0].data = rxData;
-        historyChart.data.datasets[1].data = txData;
-        historyChart.update();
-    }
+    historyChart.data.labels = labels;
+    historyChart.data.datasets[0].data = rxData;
+    historyChart.data.datasets[1].data = txData;
+    
+    // Cập nhật biểu đồ
+    historyChart.update();
 }

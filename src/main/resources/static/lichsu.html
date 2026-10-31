@@ -61,7 +61,7 @@
             
             <div class="header-right-actions">
                 <!-- WebSocket Status Component -->
-                 <div id="ws-status-container" class="ws-container">
+                <div id="ws-status-container" class="ws-container">
                     <!-- JavaScript sẽ render trạng thái ở đây -->
                 </div>
 
@@ -76,7 +76,6 @@
             
             <!-- Thanh Bộ lọc Tra cứu (Tất cả nằm trên 1 hàng duy nhất) -->
             <div class="history-filter-bar">
-                <!-- Thêm class filter-item-agent để bóp gọn & hiện dấu ... khi tên quá dài -->
                 <div class="filter-item filter-item-agent">
                     <label class="filter-label">Agent</label>
                     <select id="history-agent-select" class="form-select font-bold">
@@ -97,20 +96,27 @@
                 <div class="filter-item btn-search-wrapper">
                     <button id="btn-search-history" class="btn-primary-teal">Tra cứu</button>
                 </div>
-
-                <!-- Nút chọn nhanh mốc thời gian -->
-                <!-- <div class="quick-time-buttons">
-                    <button class="btn-quick-time" onclick="setQuickTime(1)">1 phút</button>
-                    <button class="btn-quick-time" onclick="setQuickTime(5)">5 phút</button>
-                    <button class="btn-quick-time" onclick="setQuickTime(15)">15 phút</button>
-                </div> -->
             </div>
 
             <!-- Khung Biểu đồ Lịch sử RX/TX -->
             <div class="chart-card">
-                <div class="chart-title">RX / TX trong khoảng thời gian (MB/s)</div>
-                <div class="chart-container" style="height: 280px;">
+                <div class="chart-card-header">
+                    <div class="chart-title">RX / TX trong khoảng thời gian (MB/s)</div>
+                </div>
+
+                <div class="chart-viewport-wrapper">
                     <canvas id="historyChart"></canvas>
+                </div>
+
+                <div id="custom-chart-legend" class="custom-legend-bottom">
+                    <div class="legend-item">
+                        <span class="legend-box rx-box"></span>
+                        <span class="legend-text">RX (MB/s)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-box tx-box"></span>
+                        <span class="legend-text">TX (MB/s)</span>
+                    </div>
                 </div>
             </div>
 
