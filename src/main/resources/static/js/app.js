@@ -66,7 +66,42 @@ function startClock() {
     }, 1000);
 }
 
-// Lấy danh sách Agent ban đầu từ CSDL
+/**
+ * Hàm phân loại 3 mức độ chất lượng Agent: CRITICAL, WARNING, NORMAL
+ */
+function checkAgentQualityStatus(agent) {
+    if (!agent) return 'NORMAL';
+
+    const latency = parseFloat(agent.latency || 0);
+    const packetLoss = parseFloat(agent.packetLoss || 0);
+    const rxRate = parseFloat(agent.rxRate || 0);
+    const txRate = parseFloat(agent.txRate || 0);
+    const maxSpeedMb = parseFloat(agent.maxSpeed || 125.0);
+    const totalTraffic = rxRate + txRate;
+
+    // 1. NGƯỠNG CRITICAL (Mất kết nối nghiêm trọng, cạn kiệt băng thông)
+    const isCriticalLatency = latency > 150.0;
+    const isCriticalLoss = packetLoss > 5.0;
+    const isCriticalBandwidth = totalTraffic > (maxSpeedMb * 0.95);
+
+    if (isCriticalLatency || isCriticalLoss || isCriticalBandwidth) {
+        return 'CRITICAL';
+    }
+
+    // 2. NGƯỠNG WARNING (Suy hao đường truyền, lag nhẹ, tải cao)
+    const isWarningLatency = latency > 80.0;
+    const isWarningLoss = packetLoss > 1.0;
+    const isWarningBandwidth = totalTraffic > (maxSpeedMb * 0.8);
+
+    if (isWarningLatency || isWarningLoss || isWarningBandwidth) {
+        return 'WARNING';
+    }
+
+    // 3. MỨC BÌNH THƯỜNG
+    return 'NORMAL';
+}
+
+// Lấy danh sách Agent ban đầu từ CSDL qua API
 async function fetchInitialAgents() {
     try {
         const response = await fetch('/api/agents');
@@ -84,6 +119,7 @@ async function fetchInitialAgents() {
                 ipAddress: agent.ipAddress || 'N/A',
                 os: agent.os || 'N/A',
                 status: agent.status || 'OFFLINE',
+                maxSpeed: agent.maxSpeed || existing.maxSpeed || 125.0,
                 rxRate: existing.rxRate || '0.0',
                 txRate: existing.txRate || '0.0',
                 latency: existing.latency || 0,
@@ -105,34 +141,32 @@ function connectWebSocket() {
 
     const socket = new SockJS('/ws-network-monitor');
     stompClient = Stomp.over(socket);
-    stompClient.debug = null; // Tắt log debug console
+    stompClient.debug = null;
 
     stompClient.connect({}, function (frame) {
         updateWsStatusUI(true);
 
-        //ĐĂNG KÝ KÊNH CẬP NHẬT TRẠNG THÁI AGENT (ONLINE/OFFLINE)
         stompClient.subscribe('/topic/agents', function (messageOutput) {
             try {
                 const payload = JSON.parse(messageOutput.body);
 
-                // TH1: Backend trả về MẢNG toàn bộ danh sách Agent (từ AgentStatusScheduler)
                 if (Array.isArray(payload)) {
                     payload.forEach(agent => {
                         const id = agent.agentId || agent.id;
                         let existing = agentDataStore.get(id);
                         if (existing) {
-                            existing.status = agent.status; // Cập nhật trạng thái mới (OFFLINE)
+                            existing.status = agent.status;
+                            if (agent.maxSpeed) existing.maxSpeed = agent.maxSpeed;
                         } else {
                             agentDataStore.set(id, agent);
                         }
                     });
-                } 
-                // TH2: Backend trả về ĐỐI TƯỢNG 1 Agent lẻ (từ AgentService/markAgentOffline)
-                else if (payload && (payload.agentId || payload.id)) {
+                } else if (payload && (payload.agentId || payload.id)) {
                     const id = payload.agentId || payload.id;
                     let existing = agentDataStore.get(id);
                     if (existing) {
                         existing.status = payload.status;
+                        if (payload.maxSpeed) existing.maxSpeed = payload.maxSpeed;
                     }
                 }
 
@@ -140,11 +174,10 @@ function connectWebSocket() {
                 renderDashboard(); 
             } catch (err) {
                 console.error("Lỗi parse dữ liệu từ /topic/agents:", err);
-                fetchInitialAgents(); // Dự phòng nếu lỗi
+                fetchInitialAgents();
             }
         });
 
-        // ĐĂNG KÝ KÊNH METRICS REALTIME CỦA CÁC AGENT
         stompClient.subscribe('/topic/metrics/*', function (messageOutput) {
             try {
                 const data = JSON.parse(messageOutput.body);
@@ -156,15 +189,14 @@ function connectWebSocket() {
 
     }, function (error) {
         updateWsStatusUI(false);
-        setTimeout(connectWebSocket, 5000); // Tự nối lại sau 5s nếu đứt kết nối
+        setTimeout(connectWebSocket, 5000);
     });
 }
 
-//Xử lý gói tin metric từ WebSocket gửi về
+// Xử lý gói tin metric từ WebSocket
 function updateAgentMetric(data) {
     if (!data) return;
     
-    // Đảm bảo lấy đúng agentId dù định dạng JSON khác nhau
     const targetAgentId = data.agentId || (data.agent ? data.agent.agentId : null);
     if (!targetAgentId) return;
 
@@ -175,8 +207,13 @@ function updateAgentMetric(data) {
             hostname: targetAgentId,
             ipAddress: 'N/A',
             os: 'N/A',
-            status: 'ONLINE'
+            status: 'ONLINE',
+            maxSpeed: 125.0
         };
+    }
+
+    if (data.agent && data.agent.maxSpeed) {
+        existing.maxSpeed = data.agent.maxSpeed;
     }
 
     const m = data.metrics || data;
@@ -185,6 +222,7 @@ function updateAgentMetric(data) {
         existing.txRate = Number(m.txRate || 0).toFixed(1);
         existing.latency = Math.round(m.latency || 0);
         existing.packetLoss = Number(m.packetLoss || 0).toFixed(1);
+        if (m.maxSpeed) existing.maxSpeed = m.maxSpeed;
     }
 
     existing.status = 'ONLINE';
@@ -194,7 +232,7 @@ function updateAgentMetric(data) {
     updateSummaryCards();
 }
 
-// Cập nhật trực tiếp vào 1 dòng duy nhất trên bảng DOM
+// Cập nhật trực tiếp 1 dòng trên bảng DOM
 function updateSingleAgentRow(agent) {
     const tr = document.getElementById(`row-agent-${agent.agentId}`);
     if (!tr) {
@@ -203,7 +241,7 @@ function updateSingleAgentRow(agent) {
     }
 
     const isOnline = agent.status === 'ONLINE';
-    const isWarning = parseFloat(agent.latency) > 100 || parseFloat(agent.packetLoss) > 5;
+    const qualityStatus = checkAgentQualityStatus(agent);
 
     const dot = tr.querySelector('.dot-status');
     if (dot) dot.className = `dot-status ${isOnline ? 'dot-online' : 'dot-offline'}`;
@@ -228,25 +266,33 @@ function updateSingleAgentRow(agent) {
 
     const qualityCell = tr.querySelector('.cell-quality');
     if (qualityCell) {
-        qualityCell.innerHTML = isWarning 
-            ? `<span class="badge-warning">Warning</span>`
-            : `<span class="badge-normal">Normal</span>`;
+        if (qualityStatus === 'CRITICAL') {
+            qualityCell.innerHTML = `<span class="badge-critical">Critical</span>`;
+        } else if (qualityStatus === 'WARNING') {
+            qualityCell.innerHTML = `<span class="badge-warning">Warning</span>`;
+        } else {
+            qualityCell.innerHTML = `<span class="badge-normal">Normal</span>`;
+        }
     }
 }
 
-// Cập nhật 5 thẻ 
+// Cập nhật các thẻ thống kê tổng quan
 function updateSummaryCards() {
     let totalCount = agentDataStore.size;
     let onlineCount = 0;
     let offlineCount = 0;
     let totalRx = 0;
     let warningCount = 0;
+    let criticalCount = 0;
 
     agentDataStore.forEach(agent => {
         if (agent.status === 'ONLINE') onlineCount++; else offlineCount++;
         totalRx += parseFloat(agent.rxRate || 0);
 
-        if (parseFloat(agent.latency) > 100 || parseFloat(agent.packetLoss) > 5) {
+        const status = checkAgentQualityStatus(agent);
+        if (status === 'CRITICAL') {
+            criticalCount++;
+        } else if (status === 'WARNING') {
             warningCount++;
         }
     });
@@ -266,11 +312,14 @@ function updateSummaryCards() {
     const elWarn = document.getElementById('metric-warning');
     if (elWarn) elWarn.innerText = warningCount;
 
+    const elCritical = document.getElementById('metric-critical');
+    if (elCritical) elCritical.innerText = criticalCount;
+
     const alertBadge = document.getElementById('alert-count-badge');
-    if (alertBadge) alertBadge.innerText = warningCount;
+    if (alertBadge) alertBadge.innerText = warningCount + criticalCount;
 }
 
-//Vẽ lại toàn bộ bảng 
+// Vẽ lại toàn bộ bảng danh sách
 function renderDashboard() {
     const tbody = document.getElementById('agent-table-body');
     if (!tbody) return;
@@ -289,7 +338,7 @@ function renderDashboard() {
 
     agentDataStore.forEach(agent => {
         const isOnline = agent.status === 'ONLINE';
-        const isWarning = parseFloat(agent.latency) > 100 || parseFloat(agent.packetLoss) > 5;
+        const qualityStatus = checkAgentQualityStatus(agent);
 
         if (filterIp && !agent.ipAddress.toLowerCase().includes(filterIp)) return;
         if (filterOs && !agent.os.toLowerCase().includes(filterOs)) return;
@@ -298,9 +347,12 @@ function renderDashboard() {
         const tr = document.createElement('tr');
         tr.id = `row-agent-${agent.agentId}`;
 
-        const qualityBadge = isWarning 
-            ? `<span class="badge-warning">Warning</span>`
-            : `<span class="badge-normal">Normal</span>`;
+        let qualityBadgeHtml = `<span class="badge-normal">Normal</span>`;
+        if (qualityStatus === 'CRITICAL') {
+            qualityBadgeHtml = `<span class="badge-critical">Critical</span>`;
+        } else if (qualityStatus === 'WARNING') {
+            qualityBadgeHtml = `<span class="badge-warning">Warning</span>`;
+        }
 
         tr.innerHTML = `
             <td>
@@ -319,7 +371,7 @@ function renderDashboard() {
             <td class="text-right cell-tx" style="font-weight: 600;">${agent.txRate || '0.0'}</td>
             <td class="text-right cell-latency" style="font-weight: 600;">${agent.latency || 0}</td>
             <td class="text-right cell-loss" style="font-weight: 600;">${(agent.packetLoss || 0)}%</td>
-            <td class="text-center cell-quality">${qualityBadge}</td>
+            <td class="text-center cell-quality">${qualityBadgeHtml}</td>
         `;
 
         tbody.appendChild(tr);

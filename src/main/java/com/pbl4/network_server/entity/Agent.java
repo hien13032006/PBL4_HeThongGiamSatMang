@@ -39,6 +39,9 @@ public class Agent {
 
     @Column(name = "last_seen")
     private LocalDateTime lastSeen;
+    
+    @Column(name = "max_speed")
+    private Double maxSpeed;
 
     @PrePersist
     protected void onCreate() {

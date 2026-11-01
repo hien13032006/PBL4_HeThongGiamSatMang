@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cảnh báo - NetWatch System</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+       
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar bên trái -->
+    <aside class="sidebar">
+        <div>
+            <!-- Logo Brand -->
+            <div class="brand-container">
+                <span class="brand-logo">NetTraffic</span>
+                <p class="brand-sub">Hệ thống giám sát lưu lượng mạng</p>
+            </div>
+
+            <!-- Navigation bên trái -->
+            <nav class="nav-menu">
+                <a href="index.html" class="nav-item">
+                    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                    <span>Tổng quan</span>
+                </a>
+
+                <a href="chitietAgent.html" class="nav-item">
+                    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                    <span>Chi tiết Agent</span>
+                </a>
+
+                <a href="lichsu.html" class="nav-item">
+                    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>Lịch sử</span>
+                </a>
+
+                <a href="canhbao.html" class="nav-item active nav-item-between">
+                    <div class="nav-left">
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                        <span>Cảnh báo</span>
+                    </div>
+                    <span id="alert-count-badge" class="badge-red">0</span>
+                </a>
+            </nav>
+        </div>
+    </aside>
+
+    <!-- Khung làm việc chính bọc toàn bộ Nội dung phải -->
+    <div class="main-workspace">
+        <!-- Header trên cùng -->
+        <header class="top-header">
+            <h1 class="page-title">CẢNH BÁO HỆ THỐNG</h1>
+                
+            <div class="header-right-actions">
+                <!-- WebSocket / Status Container -->
+                <div id="ws-status-container" class="ws-container"></div>
+
+                <!-- Nút Sáng/Tối -->
+                <button id="theme-toggle-btn" class="btn-theme-header">Sáng/Tối</button>
+            </div>
+        </header>
+
+        <!-- Nội dung chính -->
+        <main class="content-body">
+            <div class="alert-container">
+                <!-- KHỐI 1: Cấu hình ngưỡng cảnh báo nâng cao -->
+                <div class="alert-card">
+                    <h2>Cấu hình ngưỡng cảnh báo</h2>
+                    <form id="threshold-form">
+                        
+                        <!-- NHÓM 1: CẢNH BÁO MỨC ĐỘ VỪA (WARNING) -->
+                        <div class="threshold-section warning-section">
+                            <div class="section-title">
+                                <span class="badge-status-title badge-warning-title">WARNING</span>
+                                <span>Ngưỡng cảnh báo Mức độ vừa</span>
+                            </div>
+
+                            <div class="form-row-grid">
+                                <div class="form-group-item">
+                                    <label>Băng thông (RX/TX)</label>
+                                    <div class="input-inline">
+                                        <span>></span>
+                                        <input type="number" id="bwWarnPercent" value="80" min="1" max="100">
+                                        <span class="unit">% NIC</span>
+                                        <span class="sep">trong</span>
+                                        <input type="number" id="bwWarnDuration" value="5" min="1" class="input-sm">
+                                        <span class="unit">phút</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group-item">
+                                    <label>Độ trễ (Latency)</label>
+                                    <div class="input-inline">
+                                        <span>></span>
+                                        <input type="number" id="latencyWarnMs" value="80">
+                                        <span class="unit">ms</span>
+                                        <span class="sep">trong</span>
+                                        <input type="number" id="latencyWarnDuration" value="3" min="1" class="input-sm">
+                                        <span class="unit">phút</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group-item">
+                                    <label>Mất gói (Packet Loss)</label>
+                                    <div class="input-inline">
+                                        <span>></span>
+                                        <input type="number" id="lossWarnPercent" step="0.1" value="1.0">
+                                        <span class="unit">%</span>
+                                        <span class="sep">trong</span>
+                                        <input type="number" id="lossWarnDuration" value="2" min="1" class="input-sm">
+                                        <span class="unit">phút</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="divider">
+
+                        <!-- NHÓM 2: CẢNH BÁO MỨC ĐỘ NẶNG (CRITICAL) -->
+                        <div class="threshold-section critical-section">
+                            <div class="section-title">
+                                <span class="badge-status-title badge-critical-title">CRITICAL</span>
+                                <span>Ngưỡng cảnh báo Mức độ nghiêm trọng</span>
+                            </div>
+
+                            <div class="form-row-grid">
+                                <div class="form-group-item">
+                                    <label>Băng thông (RX/TX)</label>
+                                    <div class="input-inline">
+                                        <span>></span>
+                                        <input type="number" id="bwCritPercent" value="95" min="1" max="100">
+                                        <span class="unit">% NIC</span>
+                                        <span class="sep">trong</span>
+                                        <input type="number" id="bwCritDuration" value="3" min="1" class="input-sm">
+                                        <span class="unit">phút</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group-item">
+                                    <label>Độ trễ (Latency)</label>
+                                    <div class="input-inline">
+                                        <span>></span>
+                                        <input type="number" id="latencyCritMs" value="150">
+                                        <span class="unit">ms</span>
+                                        <span class="sep">trong</span>
+                                        <input type="number" id="latencyCritDuration" value="2" min="1" class="input-sm">
+                                        <span class="unit">phút</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group-item">
+                                    <label>Mất gói (Packet Loss)</label>
+                                    <div class="input-inline">
+                                        <span>></span>
+                                        <input type="number" id="lossCritPercent" step="0.1" value="5.0">
+                                        <span class="unit">%</span>
+                                        <span class="sep">trong</span>
+                                        <input type="number" id="lossCritDuration" value="1" min="1" class="input-sm">
+                                        <span class="unit">phút</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group-item">
+                                    <label>Loss Khẩn cấp (Ngay lập tức)</label>
+                                    <div class="input-inline">
+                                        <span>></span>
+                                        <input type="number" id="lossCritImmediate" step="0.1" value="10.0">
+                                        <span class="unit">%</span>
+                                        <span class="sub-note">(Báo ngay tức thời)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="action-footer">
+                            <button type="submit" class="btn-save">Lưu cấu hình cấu hình ngưỡng</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- KHỐI 2: Nhật ký cảnh báo -->
+                <div class="alert-card">
+                    <h2>Nhật ký cảnh báo</h2>
+                    <div id="alert-log-container" class="log-list">
+                        <div class="log-item">Đang tải nhật ký...</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+<script src="js/canhbao.js"></script>
+</body>
+</html>

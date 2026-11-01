@@ -3,7 +3,8 @@ let currentAgentId = null;
 let activeSubscription = null;
 
 let bandwidthChart, latencyChart, packetRateChart, packetLossChart;
-const MAX_DATA_POINTS = 30; // ~60 giây dữ liệu
+const MAX_DATA_POINTS = 30; // ~60 giây dữ liệu real-time
+let currentMaxSpeedMb = 125.0; 
 
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
@@ -46,7 +47,7 @@ function updateWsStatusUI(isConnected) {
     }
 }
 
-// Khởi tạo 4 Đồ thị Chart.js 
+// Khởi tạo 4 Đồ thị Chart.js với đường ngưỡng chuẩn thực tế
 function initCharts() {
     const commonOptions = {
         responsive: true,
@@ -61,34 +62,35 @@ function initCharts() {
         }
     };
 
-    // Chart 1: Bandwidth RX / TX
+    // Chart 1: Bandwidth RX / TX (Đường ngưỡng = 80% công suất Card mạng)
     bandwidthChart = new Chart(document.getElementById('bandwidthChart'), {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                { label: 'RX', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'TX', borderColor: '#d97706', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'Ngưỡng', borderColor: '#ef4444', borderWidth: 1, borderDash: [4, 4], data: [], pointRadius: 0 }
+                { label: 'RX (MB/s)', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'TX (MB/s)', borderColor: '#d97706', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'Warning', borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
         options: commonOptions
     });
 
-    // Chart 2: Latency
+    // Chart 2: Latency (Bổ sung 2 đường ngưỡng Warning 80ms & Critical 150ms)
     latencyChart = new Chart(document.getElementById('latencyChart'), {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                { label: 'Latency', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'Ngưỡng', borderColor: '#ef4444', borderWidth: 1, borderDash: [4, 4], data: [], pointRadius: 0 }
+                { label: 'Latency (ms)', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'Warning', borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 },
+                { label: 'Critical', borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
         options: commonOptions
     });
 
-    // Chart 3: Packet Rate
+    // Chart 3: Packet Rate (Tần suất truyền/nhận gói tin)
     packetRateChart = new Chart(document.getElementById('packetRateChart'), {
         type: 'line',
         data: {
@@ -101,21 +103,22 @@ function initCharts() {
         options: commonOptions
     });
 
-    // Chart 4: Packet Loss
+    // Chart 4: Packet Loss (Bổ sung 2 đường ngưỡng Warning 1% & Critical 5%)
     packetLossChart = new Chart(document.getElementById('packetLossChart'), {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                { label: 'Packet Loss', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'Ngưỡng', borderColor: '#ef4444', borderWidth: 1, borderDash: [4, 4], data: [], pointRadius: 0 }
+                { label: 'Packet Loss (%)', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'Warning', borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 },
+                { label: 'Critical', borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
         options: commonOptions
     });
 }
 
-//Tải danh sách Agent đổ vào Dropdown
+// Tải danh sách Agent đổ vào Dropdown
 async function fetchAgentsList() {
     try {
         const response = await fetch('/api/agents');
@@ -145,6 +148,14 @@ async function selectAgent(agentId) {
         const response = await fetch(`/api/agents/${agentId}/summary`);
         if (response.ok) {
             const data = await response.json();
+            
+            // Cập nhật maxSpeedMBps của Agent hiện tại
+            if (data.maxSpeedMBps && data.maxSpeedMBps > 0) {
+                currentMaxSpeedMb = data.maxSpeedMBps;
+            } else if (data.agent && data.agent.maxSpeed) {
+                currentMaxSpeedMb = data.agent.maxSpeed;
+            }
+            
             renderAgentDataFromDB(data);
         }
     } catch (err) {
@@ -191,6 +202,7 @@ function renderAgentDataFromDB(data) {
         document.getElementById('metric-loss-probe').innerHTML = `${(m.packetLoss || 0).toFixed(1)}% <span class="sub-probe">(20/20)</span>`;
     }
 }
+
 // Kết nối WebSocket
 function connectWebSocket() {
     updateWsStatusUI(false);
@@ -230,6 +242,11 @@ function pushMetricToCharts(data) {
     const m = data.metrics;
     const timeLabel = new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
+    // Nếu có maxSpeed đi kèm từ socket -> Cập nhật ngay
+    if (m.maxSpeed && m.maxSpeed > 0) {
+        currentMaxSpeedMb = m.maxSpeed;
+    }
+
     const rxMb = Number(m.rxRate || 0).toFixed(2);
     const txMb = Number(m.txRate || 0).toFixed(2);
 
@@ -240,18 +257,23 @@ function pushMetricToCharts(data) {
     
     const latencyFormatted = Number(m.latency || 0).toFixed(2);
     document.getElementById('metric-latency').innerHTML = `${latencyFormatted} <span class="unit">ms</span>`;
+    if (document.getElementById('metric-loss-probe')) {
+        document.getElementById('metric-loss-probe').innerHTML = `${(m.packetLoss || 0).toFixed(1)}% <span class="sub-probe">(20/20)</span>`;
+    }
 
-    // 1. Biểu đồ Băng thông RX / TX
-    addPoint(bandwidthChart, timeLabel, [rxMb, txMb, 80]);
+    // TÍNH TOÁN CÁC ĐƯỜNG NGƯỠNG ĐỘNG LÊN ĐỒ THỊ
+    // 1. Biểu đồ Băng thông: Ngưỡng 80% = maxSpeedMBps * 0.8
+    const bandwidthThreshold = Number((currentMaxSpeedMb * 0.8).toFixed(2));
+    addPoint(bandwidthChart, timeLabel, [rxMb, txMb, bandwidthThreshold]);
 
-    // 2. Biểu đồ Latency
-    addPoint(latencyChart, timeLabel, [m.latency || 0, 100]);
+    // 2. Biểu đồ Latency: Ngưỡng Warning (80ms) và Critical (150ms)
+    addPoint(latencyChart, timeLabel, [m.latency || 0, 80, 150]);
 
-    // 3. Biểu đồ Packet Rate
+    // 3. Biểu đồ Packet Rate: So sánh luồng RX vs TX packets/s
     addPoint(packetRateChart, timeLabel, [m.rxPacketRate || 0, m.txPacketRate || 0]);
 
-    // 4. Biểu đồ Packet Loss
-    addPoint(packetLossChart, timeLabel, [m.packetLoss || 0, 5]);
+    // 4. Biểu đồ Packet Loss: Ngưỡng Warning (1%) và Critical (5%)
+    addPoint(packetLossChart, timeLabel, [m.packetLoss || 0, 1, 5]);
 }
 
 function addPoint(chart, label, values) {
