@@ -11,6 +11,7 @@ public class AgentRegistration {
     private String macAddress;
     private String os;
     private String nicName;
+    private Long maxSpeed;
     private long timestamp;
 
     public AgentRegistration() {
@@ -18,6 +19,11 @@ public class AgentRegistration {
 
     public AgentRegistration(String agentId, String hostname, String ipAddress, String macAddress,
                             String os, String nicName, long timestamp) {
+        this(agentId, hostname, ipAddress, macAddress, os, nicName, null, timestamp);
+    }
+
+    public AgentRegistration(String agentId, String hostname, String ipAddress, String macAddress,
+                            String os, String nicName, Long maxSpeed, long timestamp) {
         this.type = "REGISTER";
         this.agentId = agentId;
         this.hostname = hostname;
@@ -25,6 +31,7 @@ public class AgentRegistration {
         this.macAddress = macAddress;
         this.os = os;
         this.nicName = nicName;
+        this.maxSpeed = maxSpeed;
         this.timestamp = timestamp;
     }
 
@@ -48,6 +55,9 @@ public class AgentRegistration {
 
     public String getNicName() { return nicName; }
     public void setNicName(String nicName) { this.nicName = nicName; }
+
+    public Long getMaxSpeed() { return maxSpeed; }
+    public void setMaxSpeed(Long maxSpeed) { this.maxSpeed = maxSpeed; }
 
     public long getTimestamp() { return timestamp; }
     public void setTimestamp(long timestamp) { this.timestamp = timestamp; }

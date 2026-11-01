@@ -42,6 +42,7 @@ public class AgentApp {
                 networkDetails.macAddress(),
                 os,
                 networkDetails.nicName(),
+                networkDetails.maxSpeedMbps(),
                 now.toEpochMilli()
         );
 
