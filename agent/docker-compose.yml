@@ -4,6 +4,7 @@ x-agent: &agent
     - NET_ADMIN
   environment: &agent-env
     SERVER_HOST: ${SERVER_IP:-host.docker.internal}
+    PBL4_PING_TARGET: ${PBL4_PING_TARGET:-${SERVER_IP:-host.docker.internal}}
     PBL4_LINK_SPEED_MBPS: "100"
   extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -80,7 +81,6 @@ services:
       <<: *agent-env
       DEMO_SCENARIO: lag
       DEMO_DELAY_MS: "200"         # >150ms = CRITICAL, 80-150 = WARNING
-      PBL4_PING_TARGET: 127.0.0.1
 
   sc-loss:
     <<: *agent
@@ -92,7 +92,6 @@ services:
       <<: *agent-env
       DEMO_SCENARIO: loss
       DEMO_LOSS_PCT: "10"          # >5% = CRITICAL, 1-5% = WARNING
-      PBL4_PING_TARGET: 127.0.0.1
 
   # Three focused scenarios requested for the demo.
   demo-high-pps:
@@ -117,7 +116,6 @@ services:
       <<: *agent-env
       DEMO_SCENARIO: packet-loss
       DEMO_LOSS_PCT: "10"
-      PBL4_PING_TARGET: 127.0.0.1
       PBL4_PROBE_INTERVAL_MS: "1000"
 
   demo-latency:
@@ -130,5 +128,4 @@ services:
       <<: *agent-env
       DEMO_SCENARIO: latency
       DEMO_DELAY_MS: "120"
-      PBL4_PING_TARGET: 127.0.0.1
       PBL4_PROBE_INTERVAL_MS: "1000"
