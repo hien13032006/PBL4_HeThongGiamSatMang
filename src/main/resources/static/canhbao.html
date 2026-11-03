@@ -52,7 +52,7 @@
     <div class="main-workspace">
         <!-- Header trên cùng -->
         <header class="top-header">
-            <h1 class="page-title">CẢNH BÁO HỆ THỐNG</h1>
+            <h1 class="page-title">CẢNH BÁO</h1>
                 
             <div class="header-right-actions">
                 <!-- WebSocket / Status Container -->
@@ -75,7 +75,6 @@
                         <div class="threshold-section warning-section">
                             <div class="section-title">
                                 <span class="badge-status-title badge-warning-title">WARNING</span>
-                                <span>Ngưỡng cảnh báo Mức độ vừa</span>
                             </div>
 
                             <div class="form-row-grid">
@@ -123,7 +122,6 @@
                         <div class="threshold-section critical-section">
                             <div class="section-title">
                                 <span class="badge-status-title badge-critical-title">CRITICAL</span>
-                                <span>Ngưỡng cảnh báo Mức độ nghiêm trọng</span>
                             </div>
 
                             <div class="form-row-grid">
@@ -164,7 +162,7 @@
                                 </div>
 
                                 <div class="form-group-item">
-                                    <label>Loss Khẩn cấp (Ngay lập tức)</label>
+                                    <label>Loss khẩn cấp</label>
                                     <div class="input-inline">
                                         <span>></span>
                                         <input type="number" id="lossCritImmediate" step="0.1" value="10.0">
@@ -176,7 +174,7 @@
                         </div>
 
                         <div class="action-footer">
-                            <button type="submit" class="btn-save">Lưu cấu hình cấu hình ngưỡng</button>
+                            <button type="submit" class="btn-save">Lưu cấu hình</button>
                         </div>
                     </form>
                 </div>
@@ -193,5 +191,8 @@
     </div>
 
 <script src="js/canhbao.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+<script src="js/toast.js"></script>
 </body>
 </html>

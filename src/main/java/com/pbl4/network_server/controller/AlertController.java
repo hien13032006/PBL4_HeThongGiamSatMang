@@ -1,43 +1,35 @@
 package com.pbl4.network_server.controller;
 
+import com.pbl4.network_server.entity.AlertThreshold;
+import com.pbl4.network_server.service.AlertService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/alerts")
 @CrossOrigin(origins = "*")
 public class AlertController {
 
-    private static final Map<String, Object> thresholdConfig = new HashMap<>();
+    @Autowired
+    private AlertService alertService;
 
-    static {
-        thresholdConfig.put("rxMax", 80.0);
-        thresholdConfig.put("latencyMax", 100.0);
-        thresholdConfig.put("packetLossMax", 5.0);
-    }
-
+    // 1. Lấy toàn bộ thông số ngưỡng cấu hình từ CSDL 
     @GetMapping("/thresholds")
-    public ResponseEntity<?> getThresholds() {
-        return ResponseEntity.ok(thresholdConfig);
+    public ResponseEntity<AlertThreshold> getThresholds() {
+        return ResponseEntity.ok(alertService.getThresholds());
     }
 
+    // 2. Lưu/Cập nhật cấu hình ngưỡng mới vào CSDL 
     @PostMapping("/thresholds")
-    public ResponseEntity<?> updateThresholds(@RequestBody Map<String, Object> newConfig) {
-        thresholdConfig.putAll(newConfig);
-        return ResponseEntity.ok(Map.of("message", "Success"));
+    public ResponseEntity<AlertThreshold> updateThresholds(@RequestBody AlertThreshold newConfig) {
+        AlertThreshold updated = alertService.updateThresholds(newConfig);
+        return ResponseEntity.ok(updated);
     }
 
+    // 3. Lấy danh sách nhật ký cảnh báo vĩnh viễn từ CSDL
     @GetMapping("/logs")
     public ResponseEntity<?> getAlertLogs() {
-        // Khai báo biến logs chuẩn cú pháp Java 21
-        List<Map<String, Object>> logs = new ArrayList<>();
-
-        // Trả về danh sách rỗng khi chưa có cảnh báo
-        return ResponseEntity.ok(logs);
+        return ResponseEntity.ok(alertService.getAlertLogs());
     }
 }

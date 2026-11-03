@@ -42,7 +42,7 @@
                     <span>Lịch sử</span>
                 </a>
 
-                <a href="#" class="nav-item nav-item-between">
+                <a href="canhbao.html" class="nav-item nav-item-between">
                     <div class="nav-left">
                         <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                         <span>Cảnh báo</span>
@@ -57,20 +57,17 @@
     <div class="main-workspace">
         <!-- Header trên cùng -->
         <header class="top-header">
-            <h1 class="page-title">Lịch sử Metrics</h1>
-            
+            <h1 class="page-title">LỊCH SỬ</h1>
+                
             <div class="header-right-actions">
-                <!-- WebSocket Status Component -->
-                <div id="ws-status-container" class="ws-container">
-                    <!-- JavaScript sẽ render trạng thái ở đây -->
-                </div>
+                <!-- WebSocket / Status Container -->
+                <div id="ws-status-container" class="ws-container"></div>
 
-                <!-- Nút chuyển Chế độ Sáng / Tối -->
-                <button id="theme-toggle-btn" class="btn-theme-header">
-                    Sáng/Tối
-                </button>
+                <!-- Nút Sáng/Tối -->
+                <button id="theme-toggle-btn" class="btn-theme-header">Sáng/Tối</button>
             </div>
         </header>
+
 
         <main class="content-body">
             
@@ -151,5 +148,8 @@
 
     <!-- Script xử lý trang Lịch sử -->
     <script src="js/lichsu.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script src="js/toast.js"></script>
 </body>
 </html>

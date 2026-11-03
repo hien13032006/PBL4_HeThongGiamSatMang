@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchThresholdConfigs();
     fetchAlertLogs();
 
-    // Lắng nghe sự kiện lưu cấu hình ngưỡng
+    // Lắng nghe sự kiện submit form lưu cấu hình ngưỡng
     const thresholdForm = document.getElementById('threshold-form');
     if (thresholdForm) {
         thresholdForm.addEventListener('submit', async (e) => {
@@ -13,11 +13,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Tự động làm mới danh sách nhật ký cảnh báo mỗi 5 giây
+    // Tự động làm mới nhật ký cảnh báo mỗi 5 giây
     setInterval(fetchAlertLogs, 5000);
 });
 
-// Chức năng bật/tắt chế độ Sáng/Tối (Dark Mode)
 function initThemeToggle() {
     const themeBtn = document.getElementById('theme-toggle-btn');
     if (themeBtn) {
@@ -27,58 +26,74 @@ function initThemeToggle() {
     }
 }
 
-// Cập nhật đồng hồ thời gian thực ở Header
-function startClock() {
-    const statusContainer = document.getElementById('ws-status-container');
-    if (!statusContainer) return;
+function updateWsStatusUI(isConnected) {
+    const container = document.getElementById('ws-status-container');
+    if (!container) return;
 
-    const renderTime = () => {
-        const currentTime = new Date().toLocaleTimeString('vi-VN', { hour12: false });
-        statusContainer.innerHTML = `
+    const currentTime = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+
+    if (isConnected) {
+        container.innerHTML = `
             <div class="ws-status-connected">
                 <span class="dot-ping-wrapper">
                     <span class="dot-ping"></span>
                     <span class="dot-solid-green"></span>
                 </span>
-                <span>Hệ thống hoạt động · <span>${currentTime}</span></span>
+                <span>WebSocket · TCP :9999 · <span id="ws-live-time">${currentTime}</span></span>
             </div>
         `;
-    };
-
-    renderTime();
-    setInterval(renderTime, 1000);
+    } else {
+        container.innerHTML = `
+            <div class="ws-status-disconnected">
+                <span class="dot-solid-red"></span>
+                <span>Mất kết nối WebSocket</span>
+            </div>
+        `;
+    }
 }
 
-// 1. Nạp cấu hình ngưỡng hiện tại từ REST API
+// Cập nhật đồng hồ từng giây cho nhãn WebSocket
+function startClock() {
+    updateWsStatusUI(true); // Hiển thị mặc định trạng thái connected với nhãn WebSocket · TCP :9999
+    
+    setInterval(() => {
+        const timeElem = document.getElementById('ws-live-time');
+        if (timeElem) {
+            timeElem.innerText = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+        }
+    }, 1000);
+}
+
+// 1. Nạp toàn bộ ngưỡng cấu hình từ REST API và đổ vào các ô input
 async function fetchThresholdConfigs() {
     try {
         const response = await fetch('/api/alerts/thresholds');
         if (response.ok) {
             const data = await response.json();
-            
-            // Warning Thresholds
-            if (data.bwWarnPercent) document.getElementById('bwWarnPercent').value = data.bwWarnPercent;
-            if (data.bwWarnDuration) document.getElementById('bwWarnDuration').value = data.bwWarnDuration;
-            if (data.latencyWarnMs) document.getElementById('latencyWarnMs').value = data.latencyWarnMs;
-            if (data.latencyWarnDuration) document.getElementById('latencyWarnDuration').value = data.latencyWarnDuration;
-            if (data.lossWarnPercent) document.getElementById('lossWarnPercent').value = data.lossWarnPercent;
-            if (data.lossWarnDuration) document.getElementById('lossWarnDuration').value = data.lossWarnDuration;
 
-            // Critical Thresholds
-            if (data.bwCritPercent) document.getElementById('bwCritPercent').value = data.bwCritPercent;
-            if (data.bwCritDuration) document.getElementById('bwCritDuration').value = data.bwCritDuration;
-            if (data.latencyCritMs) document.getElementById('latencyCritMs').value = data.latencyCritMs;
-            if (data.latencyCritDuration) document.getElementById('latencyCritDuration').value = data.latencyCritDuration;
-            if (data.lossCritPercent) document.getElementById('lossCritPercent').value = data.lossCritPercent;
-            if (data.lossCritDuration) document.getElementById('lossCritDuration').value = data.lossCritDuration;
-            if (data.lossCritImmediate) document.getElementById('lossCritImmediate').value = data.lossCritImmediate;
+            // Mức độ Warning
+            if (data.bwWarnPercent !== undefined) document.getElementById('bwWarnPercent').value = data.bwWarnPercent;
+            if (data.bwWarnDuration !== undefined) document.getElementById('bwWarnDuration').value = data.bwWarnDuration;
+            if (data.latencyWarnMs !== undefined) document.getElementById('latencyWarnMs').value = data.latencyWarnMs;
+            if (data.latencyWarnDuration !== undefined) document.getElementById('latencyWarnDuration').value = data.latencyWarnDuration;
+            if (data.lossWarnPercent !== undefined) document.getElementById('lossWarnPercent').value = data.lossWarnPercent;
+            if (data.lossWarnDuration !== undefined) document.getElementById('lossWarnDuration').value = data.lossWarnDuration;
+
+            // Mức độ Critical
+            if (data.bwCritPercent !== undefined) document.getElementById('bwCritPercent').value = data.bwCritPercent;
+            if (data.bwCritDuration !== undefined) document.getElementById('bwCritDuration').value = data.bwCritDuration;
+            if (data.latencyCritMs !== undefined) document.getElementById('latencyCritMs').value = data.latencyCritMs;
+            if (data.latencyCritDuration !== undefined) document.getElementById('latencyCritDuration').value = data.latencyCritDuration;
+            if (data.lossCritPercent !== undefined) document.getElementById('lossCritPercent').value = data.lossCritPercent;
+            if (data.lossCritDuration !== undefined) document.getElementById('lossCritDuration').value = data.lossCritDuration;
+            if (data.lossCritImmediate !== undefined) document.getElementById('lossCritImmediate').value = data.lossCritImmediate;
         }
     } catch (err) {
-        console.error("Lỗi khi nạp ngưỡng cảnh báo:", err);
+        console.error("Lỗi khi nạp ngưỡng cảnh báo từ API:", err);
     }
 }
 
-// 2. Lưu toàn bộ bộ ngưỡng mới xuống CSDL qua API
+// 2. Gửi bộ thông số ngưỡng mới lên REST API để lưu vào CSDL 
 async function saveThresholdConfigs() {
     const payload = {
         bwWarnPercent: parseFloat(document.getElementById('bwWarnPercent').value),
@@ -105,17 +120,18 @@ async function saveThresholdConfigs() {
         });
 
         if (response.ok) {
-            alert("Lưu ngưỡng cảnh báo thành công!");
-            fetchAlertLogs();
+            showCustomAlert("Đã lưu cấu hình ngưỡng cảnh báo thành công!", "THÀNH CÔNG");
+            fetchAlertLogs(); 
         } else {
-            alert("Lưu thất bại!");
+            alert("Lưu thất bại! Vui lòng kiểm tra lại phía Server.");
         }
     } catch (err) {
-        console.error("Lỗi khi lưu ngưỡng:", err);
+        console.error("Lỗi khi kết nối REST API lưu ngưỡng:", err);
+        alert("Không thể kết nối đến máy chủ!");
     }
 }
 
-// 3. Tải danh sách Nhật ký cảnh báo từ REST API
+// 3. Tải danh sách Nhật ký cảnh báo thực tế từ REST API
 async function fetchAlertLogs() {
     const container = document.getElementById('alert-log-container');
     if (!container) return;
@@ -127,7 +143,6 @@ async function fetchAlertLogs() {
         const logs = await response.json();
         container.innerHTML = '';
 
-        // Nếu API trả về mảng rỗng [] -> Hiển thị "Chưa có cảnh báo nào."
         if (!logs || logs.length === 0) {
             container.innerHTML = `<div class="log-item" style="color: #64748b; font-style: italic; justify-content: center; padding: 20px 0;">Chưa có cảnh báo nào.</div>`;
             const alertBadge = document.getElementById('alert-count-badge');
@@ -135,24 +150,37 @@ async function fetchAlertLogs() {
             return;
         }
 
-        // Cập nhật số lượng cảnh báo lên Badge sidebar
         const alertBadge = document.getElementById('alert-count-badge');
         if (alertBadge) alertBadge.innerText = logs.length;
 
-        // Render từng dòng nhật ký cảnh báo thực tế
+        // Render danh sách cảnh báo thực tế
         logs.forEach(log => {
-            const timeStr = log.timestamp ? log.timestamp.split('T')[1].substring(0, 8) : '--:--:--';
+            const rawTime = log.createdAt || log.timestamp || '';
+            const timeStr = rawTime.includes('T') ? rawTime.split('T')[1].substring(0, 8) : (rawTime.substring(11, 19) || '--:--:--');
             
-            let typeClass = 'rx';
-            const logTypeLower = (log.type || '').toLowerCase();
-            if (logTypeLower.includes('loss')) typeClass = 'loss';
-            if (logTypeLower.includes('latency')) typeClass = 'latency';
+            const logValue = (log.metricValue !== undefined) ? log.metricValue : log.value;
+            const thresholdVal = (log.thresholdValue !== undefined) ? log.thresholdValue : log.threshold;
+            
+            const severityUpper = (log.severity || 'WARNING').toUpperCase();
+            const isWarning = severityUpper === 'WARNING';
+            
+            const titleClass = isWarning ? 'alert-title-warning' : 'alert-title-critical';
 
             const itemHtml = `
                 <div class="log-item">
                     <span class="log-time">${timeStr}</span>
-                    <span class="log-type ${typeClass}">${log.type}</span> – 
-                    <span>${log.hostname || 'Agent'}: ${log.type} = ${log.value} ${log.unit || ''} (ngưỡng > ${log.threshold})</span>
+                    
+                    <div class="${titleClass} log-header-block">
+                        [${severityUpper}]<br>
+                        ${log.type || 'Alert'}
+                    </div>
+
+                    <span style="color: #94a3b8; margin-right: 2px;">–</span>
+
+                    <span class="log-detail-block">
+                        ${log.hostname || log.agentId || 'Agent'}:<br>
+                        ${log.type} = ${logValue} ${log.unit || ''} (ngưỡng > ${thresholdVal})
+                    </span>
                 </div>
             `;
             container.innerHTML += itemHtml;
@@ -160,5 +188,41 @@ async function fetchAlertLogs() {
     } catch (err) {
         console.error("Lỗi khi nạp nhật ký cảnh báo:", err);
         container.innerHTML = `<div class="log-item" style="color: #ef4444;">Không thể kết nối đến máy chủ API.</div>`;
+    }
+}
+
+/**
+ * Hàm hiển thị Modal thông báo 
+ */
+function showCustomAlert(message, title = 'THÔNG BÁO') {
+    const existingOverlay = document.querySelector('.custom-alert-overlay');
+    if (existingOverlay) existingOverlay.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'custom-alert-overlay';
+
+    overlay.innerHTML = `
+        <div class="custom-alert-card">
+            <div class="custom-alert-icon">✓</div>
+            <div class="custom-alert-title">${title}</div>
+            <div class="custom-alert-message">${message}</div>
+            <button class="custom-alert-btn" onclick="closeCustomAlert(this)">Đồng ý</button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+}
+
+// Hàm đóng Modal
+function closeCustomAlert(btnElem) {
+    if (!btnElem) return;
+    const overlay = btnElem.closest('.custom-alert-overlay');
+    if (overlay && !overlay.classList.contains('fadeOut')) {
+        overlay.classList.add('fadeOut');
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        }, 200);
     }
 }

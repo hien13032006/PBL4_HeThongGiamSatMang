@@ -17,10 +17,10 @@ public interface MetricsHistoryRepository extends JpaRepository<MetricsHistory, 
     List<MetricsHistory> findByAgentAgentIdAndTimestampBetweenOrderByTimestampAsc(
             String agentId, LocalDateTime start, LocalDateTime end);
 
-    // 2. Lấy 20 bản ghi mới nhất của 1 Agent (dùng cho REST API cũ)
+    // 2. Lấy 20 bản ghi mới nhất của 1 Agent 
     List<MetricsHistory> findTop20ByAgentAgentIdOrderByTimestampDesc(String agentId);
 
-    // 3. Lấy 1 bản ghi mới nhất trong CSDL của 1 Agent (dành cho API Summary)
+    // 3. Lấy 1 bản ghi mới nhất trong CSDL của 1 Agent
     Optional<MetricsHistory> findTopByAgentAgentIdOrderByTimestampDesc(String agentId);
 
     // 4. Tính tổng RX (KB) tích lũy trong CSDL của Agent

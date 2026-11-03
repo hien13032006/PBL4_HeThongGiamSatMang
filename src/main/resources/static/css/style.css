@@ -42,13 +42,16 @@ body {
    SIDEBAR LAYOUT
    ========================================================================== */
 .sidebar {
+    position: fixed;
     width: 240px;
     background-color: var(--bg-card);
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    min-height: 100vh;
+    width: 240px;
+    height: 100vh;
+    z-index: 1000;
 }
 
 .brand-container {
@@ -118,6 +121,7 @@ body {
    WORKSPACE & TOP HEADER ACTIONS
    ========================================================================== */
 .main-workspace {
+    margin-left: 240px;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -162,7 +166,7 @@ body {
 }
 
 .content-body {
-    padding: 32px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 24px;
@@ -352,12 +356,15 @@ body.dark .ws-status-disconnected {
 }
 
 .table-wrapper {
-    overflow-x: auto;
+    max-height: 500px;  
+    overflow-y: auto;   
+    overflow-x: auto;   
 }
 
 .data-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate; 
+    border-spacing: 0;         
     text-align: left;
     font-size: 14px;
 }
@@ -367,6 +374,17 @@ body.dark .ws-status-disconnected {
     border-bottom: 1px solid var(--border-color);
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+.data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--bg-card); 
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+    color: var(--text-secondary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); 
 }
 
 .data-table th, .data-table td {
@@ -421,7 +439,7 @@ body.dark .ws-status-disconnected {
     border-radius: 9999px;
 }
 
-.badge-red {
+.badge-critical, .badge-red {
     background-color: #fee2e2;
     color: #dc2626;
     font-size: 12px;
@@ -844,7 +862,6 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 24px;
-        padding: 24px;
     }
 
     .alert-card {
@@ -1007,7 +1024,7 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 }
 
 .btn-save {
-    background-color: #0f766e;
+    background-color: var(--brand-teal);
     color: white;
     border: none;
     padding: 9px 20px;
@@ -1019,7 +1036,7 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
 }
 
 .btn-save:hover {
-    background-color: #115e59;
+    background-color: #219fc2;
 }
 
 .note-text {
@@ -1028,7 +1045,18 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
     color: #64748b;
 }
 
-    /* Danh sách Nhật ký cảnh báo */
+/* Danh sách Nhật ký cảnh báo */
+/* Danh sách Nhật ký cảnh báo */
+.alert-title-warning {
+    color: #d97706 !important; /* Màu vàng nâu đặc trưng */
+    font-weight: 700;
+}
+
+.alert-title-critical {
+    color: #dc2626 !important; /* Màu đỏ */
+    font-weight: 700;
+}
+
 .log-list {
     min-height: 250px;
     max-height: 450px;
@@ -1043,18 +1071,303 @@ body.dark .badge-red { background-color: rgba(127, 29, 29, 0.5); color: #fca5a5;
     color: #334155;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px; /* Thu hẹp khoảng cách mặc định từ 8px/12px xuống 4px */
 }
 
 .log-time {
     color: #64748b;
     font-family: monospace;
+    min-width: 65px; /* Cố định chiều rộng cột thời gian */
 }
 
-.log-type {
+/* Khối tiêu đề loại cảnh báo */
+.log-header-block {
+    line-height: 1.2;
+    min-width: 95px; /* Giảm chiều rộng tối thiểu (trước đây là 130px) để đẩy nội dung lại gần */
+}
+
+/* Khối nội dung chi tiết */
+.log-detail-block {
+    margin-left: -15px; /* Đẩy nội dung dịch về bên trái gần tiêu đề hơn */
+}
+
+/* Lớp phủ làm mờ nền màn hình */
+.custom-alert-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.45); /* Nền mờ hiện đại */
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999999;
+    animation: alertFadeIn 0.2s ease-out forwards;
+}
+
+/* Thẻ Modal thông báo */
+.custom-alert-card {
+    background: #ffffff;
+    width: 90%;
+    max-width: 380px;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
+    text-align: center;
+    animation: alertZoomIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Icon tích xanh thông báo thành công */
+.custom-alert-icon {
+    width: 48px;
+    height: 48px;
+    background-color: #dcfce7;
+    color: #16a34a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    margin: 0 auto 14px auto;
+}
+
+/* Tiêu đề thông báo */
+.custom-alert-title {
+    font-size: 17px;
     font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
 }
 
-.log-type.rx { color: #dc2626; }
-.log-type.latency { color: #dc2626; }
-.log-type.loss { color: #dc2626; }
+/* Nội dung thông báo */
+.custom-alert-message {
+    font-size: 14px;
+    color: #475569;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+/* Nút xác nhận OK */
+.custom-alert-btn {
+    background-color: #2980b9;
+    color: #ffffff;
+    border: none;
+    padding: 9px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.custom-alert-btn:hover {
+    background-color: #237be0;
+}
+
+/* Hiệu ứng Animation */
+@keyframes alertFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes alertZoomIn {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.custom-alert-overlay.fadeOut {
+    animation: alertFadeOut 0.2s ease-in forwards;
+}
+
+@keyframes alertFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+/* ==========================================================================
+   STYLING RIÊNG CHO TOAST NOTIFICATION
+   ========================================================================== */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 380px;
+    pointer-events: none;
+}
+
+/* Kiểu dáng chung của thẻ Toast */
+.toast-card {
+    pointer-events: auto;
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 12px 16px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+    animation: slideInRight 0.3s ease-out forwards;
+}
+
+/* Thẻ CRITICAL: Màu đỏ */
+.toast-card.critical {
+    border-left: 5px solid #dc2626;
+    border-top: 1px solid #fee2e2;
+    border-right: 1px solid #fee2e2;
+    border-bottom: 1px solid #fee2e2;
+}
+
+.toast-card.critical .toast-title {
+    color: #b91c1c; /* Màu đỏ */
+}
+
+/* Thẻ WARNING: Màu vàng nâu đặc trưng */
+.toast-card.warning {
+    border-left: 5px solid #fcd34d;
+    border-top: 1px solid #fef3c7;
+    border-right: 1px solid #fef3c7;
+    border-bottom: 1px solid #fef3c7;
+}
+
+.toast-card.warning .toast-title {
+    color: #d97706; 
+}
+
+/* Tiêu đề và Nội dung */
+.toast-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.toast-body {
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.4;
+}
+
+/* Hiệu ứng mờ dần khi ẩn */
+.toast-card.fadeOut {
+    animation: fadeOutRight 0.4s ease-in forwards;
+}
+
+@keyframes slideInRight {
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeOutRight {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(100%); }
+}
+
+/* Container lớp phủ và thẻ cảnh báo giữa màn hình */
+.anomaly-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.65); /* Lớp nền tối mờ màn hình */
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999999;
+    animation: fadeInModal 0.25s ease-out forwards;
+}
+
+/* Thẻ Modal chính giữa */
+.anomaly-modal-card {
+    background: #ffffff;
+    width: 90%;
+    max-width: 440px;
+    border-radius: 5px;
+    padding: 24px;
+    box-shadow: 0 25px 50px -12px rgba(220, 38, 38, 0.35);
+    border: 2px solid #ef4444;
+    text-align: center;
+    animation: zoomInModal 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Tên Agent */
+.anomaly-agent-name {
+    font-size: 20px;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Nhãn CRITICAL với hiệu ứng vòng đỏ nhấp nháy */
+.anomaly-badge-critical {
+    display: inline-block;
+    color: #dc2626;
+    font-weight: 800;
+    font-size: 25px;
+    padding: 4px 16px;
+    letter-spacing: 1px;
+}
+
+/* Tiêu đề Phát hiện bất thường */
+.anomaly-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #dc2626;
+    margin-bottom: 12px;
+}
+
+/* Chi tiết chỉ số bất thường */
+.anomaly-body {
+    font-size: 14px;
+    color: #334155;
+    background-color: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    padding: 10px 14px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-weight: 600;
+    margin-bottom: 18px;
+}
+
+/* Nút xác nhận/đóng */
+.anomaly-close-btn {
+    background-color: #dc2626;
+    color: #ffffff;
+    border: none;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.anomaly-close-btn:hover {
+    background-color: #b91c1c;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+}
+
+/* Animation mở/tắt Modal */
+@keyframes fadeInModal {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes zoomInModal {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.anomaly-modal-overlay.fadeOut {
+    animation: fadeOutModal 0.25s ease-in forwards;
+}
+
+@keyframes fadeOutModal {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}

@@ -43,6 +43,8 @@ public class Agent {
     @Column(name = "max_speed")
     private Double maxSpeed;
 
+    private String qualityStatus; // "NORMAL", "WARNING", "CRITICAL"
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();

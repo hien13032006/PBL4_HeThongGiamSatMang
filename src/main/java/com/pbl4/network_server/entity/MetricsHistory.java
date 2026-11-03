@@ -26,10 +26,10 @@ public class MetricsHistory {
     private LocalDateTime timestamp;
 
     @Column(name = "rx_rate")
-    private Double rxRate; // KB/s
+    private Double rxRate; 
 
     @Column(name = "tx_rate")
-    private Double txRate; // KB/s
+    private Double txRate; 
 
     @Column(name = "rx_packet_rate")
     private Integer rxPacketRate;

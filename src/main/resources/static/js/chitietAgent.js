@@ -6,9 +6,21 @@ let bandwidthChart, latencyChart, packetRateChart, packetLossChart;
 const MAX_DATA_POINTS = 30; // ~60 giây dữ liệu real-time
 let currentMaxSpeedMb = 125.0; 
 
+// Biến lưu trữ thông số ngưỡng lấy từ CSDL (gán giá trị mặc định phòng trường hợp API chưa phản hồi)
+let alertThresholds = {
+    bwWarnPercent: 80.0,
+    bwCritPercent: 95.0,
+    latencyWarnMs: 80.0,
+    latencyCritMs: 150.0,
+    lossWarnPercent: 1.0,
+    lossCritPercent: 5.0
+};
+
 document.addEventListener('DOMContentLoaded', () => {
+    startClock();
     initThemeToggle();
     initCharts();
+    fetchThresholdConfigs(); // Nạp cấu hình ngưỡng từ CSDL
     fetchAgentsList();
     connectWebSocket();
 
@@ -23,8 +35,49 @@ function initThemeToggle() {
     });
 }
 
+// 1. Gọi API nạp thông số ngưỡng mới nhất từ CSDL MySQL
+async function fetchThresholdConfigs() {
+    try {
+        const response = await fetch('/api/alerts/thresholds');
+        if (response.ok) {
+            const data = await response.json();
+            alertThresholds.bwWarnPercent = data.bwWarnPercent || 80.0;
+            alertThresholds.bwCritPercent = data.bwCritPercent || 95.0;
+            alertThresholds.latencyWarnMs = data.latencyWarnMs || 80.0;
+            alertThresholds.latencyCritMs = data.latencyCritMs || 150.0;
+            alertThresholds.lossWarnPercent = data.lossWarnPercent || 1.0;
+            alertThresholds.lossCritPercent = data.lossCritPercent || 5.0;
+
+            // Cập nhật lại nhãn/đường ngưỡng trên đồ thị nếu đồ thị đã được khởi tạo
+            updateChartThresholdLabels();
+        }
+    } catch (err) {
+        console.error("Lỗi khi tải cấu hình ngưỡng từ API:", err);
+    }
+}
+
+function updateChartThresholdLabels() {
+    if (bandwidthChart) {
+        bandwidthChart.data.datasets[2].label = `Warning`;
+        bandwidthChart.data.datasets[3].label = `Critical`;
+        bandwidthChart.update();
+    }
+    if (latencyChart) {
+        latencyChart.data.datasets[1].label = `Warning`;
+        latencyChart.data.datasets[2].label = `Critical`;
+        latencyChart.update();
+    }
+    if (packetLossChart) {
+        packetLossChart.data.datasets[1].label = `Warning`;
+        packetLossChart.data.datasets[2].label = `Critical`;
+        packetLossChart.update();
+    }
+}
+
 function updateWsStatusUI(isConnected) {
     const container = document.getElementById('ws-status-container');
+    if (!container) return;
+
     const currentTime = new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
     if (isConnected) {
@@ -34,7 +87,7 @@ function updateWsStatusUI(isConnected) {
                     <span class="dot-ping"></span>
                     <span class="dot-solid-green"></span>
                 </span>
-                <span>WebSocket · TCP :9999 · <span>${currentTime}</span></span>
+                <span>WebSocket · TCP :9999 · <span id="ws-live-time">${currentTime}</span></span>
             </div>
         `;
     } else {
@@ -47,7 +100,19 @@ function updateWsStatusUI(isConnected) {
     }
 }
 
-// Khởi tạo 4 Đồ thị Chart.js với đường ngưỡng chuẩn thực tế
+
+function startClock() {
+    updateWsStatusUI(true); 
+    
+    setInterval(() => {
+        const timeElem = document.getElementById('ws-live-time');
+        if (timeElem) {
+            timeElem.innerText = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+        }
+    }, 1000);
+}
+
+// Khởi tạo 4 Đồ thị Chart.js
 function initCharts() {
     const commonOptions = {
         responsive: true,
@@ -62,35 +127,36 @@ function initCharts() {
         }
     };
 
-    // Chart 1: Bandwidth RX / TX (Đường ngưỡng = 80% công suất Card mạng)
+    // Chart 1: Bandwidth RX / TX (Bổ sung 2 đường Warning & Critical dựa vào % maxSpeed)
     bandwidthChart = new Chart(document.getElementById('bandwidthChart'), {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                { label: 'RX (MB/s)', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'TX (MB/s)', borderColor: '#d97706', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'Warning', borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
+                { label: 'RX', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: 'TX', borderColor: '#d97706', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: `Warning`, borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 },
+                { label: `Critical`, borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
         options: commonOptions
     });
 
-    // Chart 2: Latency (Bổ sung 2 đường ngưỡng Warning 80ms & Critical 150ms)
+    // Chart 2: Latency
     latencyChart = new Chart(document.getElementById('latencyChart'), {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                { label: 'Latency (ms)', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'Warning', borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 },
-                { label: 'Critical', borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
+                { label: 'Latency', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: `Warning`, borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 },
+                { label: `Critical`, borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
         options: commonOptions
     });
 
-    // Chart 3: Packet Rate (Tần suất truyền/nhận gói tin)
+    // Chart 3: Packet Rate
     packetRateChart = new Chart(document.getElementById('packetRateChart'), {
         type: 'line',
         data: {
@@ -103,15 +169,15 @@ function initCharts() {
         options: commonOptions
     });
 
-    // Chart 4: Packet Loss (Bổ sung 2 đường ngưỡng Warning 1% & Critical 5%)
+    // Chart 4: Packet Loss
     packetLossChart = new Chart(document.getElementById('packetLossChart'), {
         type: 'line',
         data: {
             labels: [],
             datasets: [
-                { label: 'Packet Loss (%)', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
-                { label: 'Warning', borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 },
-                { label: 'Critical', borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
+                { label: 'Packet Loss', borderColor: '#2980b9', borderWidth: 2, data: [], pointRadius: 0, tension: 0.2 },
+                { label: `Warning`, borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 },
+                { label: `Critical`, borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], data: [], pointRadius: 0 }
             ]
         },
         options: commonOptions
@@ -166,12 +232,16 @@ async function selectAgent(agentId) {
     subscribeAgentTopic(agentId);
 }
 
-// Đổ dữ liệu CSDL lên Banner & 8 Thẻ Thống Kê
+// Đổ dữ liệu CSDL lên Banner & Thẻ Thống Kê
 function renderAgentDataFromDB(data) {
+    if (!data) return;
+
     const agent = data.agent;
     const m = data.latestMetrics;
 
-    // Nạp thông tin Agent Banner
+    // Kiểm tra trạng thái Agent
+    const isOnline = agent && agent.status === 'ONLINE';
+
     if (agent) {
         document.getElementById('info-hostname').innerText = agent.hostname || 'N/A';
         document.getElementById('info-agent-id').innerText = agent.agentId || 'N/A';
@@ -182,15 +252,18 @@ function renderAgentDataFromDB(data) {
         document.getElementById('info-last-seen').innerText = agent.lastSeen ? agent.lastSeen.replace('T', ' ') : '--';
 
         const dot = document.getElementById('info-status-dot');
-        dot.className = `profile-badge-status ${agent.status === 'ONLINE' ? 'online' : 'offline'}`;
+        if (dot) {
+            dot.className = `profile-badge-status ${isOnline ? 'online' : 'offline'}`;
+        }
     }
 
-    // Nạp tổng RX / TX tính từ DB
-    document.getElementById('metric-total-rx').innerText = (data.totalRxGB || '0.00') + ' GB';
-    document.getElementById('metric-total-tx').innerText = (data.totalTxGB || '0.00') + ' GB';
+    // 1. Nếu Agent OFFLINE -> Ép các chỉ số tổng về 0.00 GB
+    document.getElementById('metric-total-rx').innerText = (isOnline ? (data.totalRxGB || '0.00') : '0.00') + ' GB';
+    document.getElementById('metric-total-tx').innerText = (isOnline ? (data.totalTxGB || '0.00') : '0.00') + ' GB';
 
-    // Nạp thông số bản ghi gần nhất trong DB
-    if (m) {
+    // 2. Xử lý các thẻ metric chi tiết
+    if (isOnline && m) {
+        // ONLINE: Hiển thị chỉ số thực tế từ latestMetrics
         const rxMb = Number(m.rxRate || 0).toFixed(2);
         const txMb = Number(m.txRate || 0).toFixed(2);
         document.getElementById('metric-rx-rate').innerText = `${rxMb} MB/s`;
@@ -199,7 +272,19 @@ function renderAgentDataFromDB(data) {
         document.getElementById('metric-tx-packets').innerHTML = `${m.txPacketRate || 0} <span class="unit">packets/s</span>`;
         const latencyFormatted = Number(m.latency || 0).toFixed(2);
         document.getElementById('metric-latency').innerHTML = `${latencyFormatted} <span class="unit">ms</span>`;
-        document.getElementById('metric-loss-probe').innerHTML = `${(m.packetLoss || 0).toFixed(1)}% <span class="sub-probe">(20/20)</span>`;
+        if (document.getElementById('metric-loss-probe')) {
+            document.getElementById('metric-loss-probe').innerHTML = `${(m.packetLoss || 0).toFixed(1)}% <span class="sub-probe">(20/20)</span>`;
+        }
+    } else {
+        // OFFLINE: Đưa tất cả các thẻ chỉ số về 0 hết
+        document.getElementById('metric-rx-rate').innerText = `0.00 MB/s`;
+        document.getElementById('metric-tx-rate').innerText = `0.00 MB/s`;
+        document.getElementById('metric-rx-packets').innerHTML = `0 <span class="unit">packets/s</span>`;
+        document.getElementById('metric-tx-packets').innerHTML = `0 <span class="unit">packets/s</span>`;
+        document.getElementById('metric-latency').innerHTML = `0.00 <span class="unit">ms</span>`;
+        if (document.getElementById('metric-loss-probe')) {
+            document.getElementById('metric-loss-probe').innerHTML = `0.0% <span class="sub-probe">(0/20)</span>`;
+        }
     }
 }
 
@@ -242,7 +327,6 @@ function pushMetricToCharts(data) {
     const m = data.metrics;
     const timeLabel = new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
-    // Nếu có maxSpeed đi kèm từ socket -> Cập nhật ngay
     if (m.maxSpeed && m.maxSpeed > 0) {
         currentMaxSpeedMb = m.maxSpeed;
     }
@@ -261,19 +345,20 @@ function pushMetricToCharts(data) {
         document.getElementById('metric-loss-probe').innerHTML = `${(m.packetLoss || 0).toFixed(1)}% <span class="sub-probe">(20/20)</span>`;
     }
 
-    // TÍNH TOÁN CÁC ĐƯỜNG NGƯỠNG ĐỘNG LÊN ĐỒ THỊ
-    // 1. Biểu đồ Băng thông: Ngưỡng 80% = maxSpeedMBps * 0.8
-    const bandwidthThreshold = Number((currentMaxSpeedMb * 0.8).toFixed(2));
-    addPoint(bandwidthChart, timeLabel, [rxMb, txMb, bandwidthThreshold]);
+    // TÍNH TOÁN CÁC ĐƯỜNG NGƯỠNG ĐỘNG DỰA TRÊN CSDL VÀ MAX SPEED CARD MẠNG
+    // 1. Biểu đồ Băng thông: Ngưỡng Warning % và Critical % công suất Card mạng
+    const bwWarnVal = Number((currentMaxSpeedMb * (alertThresholds.bwWarnPercent / 100.0)).toFixed(2));
+    const bwCritVal = Number((currentMaxSpeedMb * (alertThresholds.bwCritPercent / 100.0)).toFixed(2));
+    addPoint(bandwidthChart, timeLabel, [rxMb, txMb, bwWarnVal, bwCritVal]);
 
-    // 2. Biểu đồ Latency: Ngưỡng Warning (80ms) và Critical (150ms)
-    addPoint(latencyChart, timeLabel, [m.latency || 0, 80, 150]);
+    // 2. Biểu đồ Latency: Ngưỡng Warning (ms) và Critical (ms) từ CSDL
+    addPoint(latencyChart, timeLabel, [m.latency || 0, alertThresholds.latencyWarnMs, alertThresholds.latencyCritMs]);
 
-    // 3. Biểu đồ Packet Rate: So sánh luồng RX vs TX packets/s
+    // 3. Biểu đồ Packet Rate: RX vs TX packets/s
     addPoint(packetRateChart, timeLabel, [m.rxPacketRate || 0, m.txPacketRate || 0]);
 
-    // 4. Biểu đồ Packet Loss: Ngưỡng Warning (1%) và Critical (5%)
-    addPoint(packetLossChart, timeLabel, [m.packetLoss || 0, 1, 5]);
+    // 4. Biểu đồ Packet Loss: Ngưỡng Warning (%) và Critical (%) từ CSDL
+    addPoint(packetLossChart, timeLabel, [m.packetLoss || 0, alertThresholds.lossWarnPercent, alertThresholds.lossCritPercent]);
 }
 
 function addPoint(chart, label, values) {

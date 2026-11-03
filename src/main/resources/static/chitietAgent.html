@@ -59,18 +59,14 @@
         
         <!-- Header trên cùng -->
         <header class="top-header">
-            <h1 class="page-title">Chi tiết Agent</h1>
-            
+            <h1 class="page-title">CHI TIẾT AGENT</h1>
+                
             <div class="header-right-actions">
-                <!-- WebSocket Status Component -->
-                <div id="ws-status-container" class="ws-container">
-                    <!-- JavaScript sẽ render trạng thái ở đây -->
-                </div>
+                <!-- WebSocket / Status Container -->
+                <div id="ws-status-container" class="ws-container"></div>
 
-                <!-- Nút chuyển Chế độ Sáng / Tối -->
-                <button id="theme-toggle-btn" class="btn-theme-header">
-                    Sáng/Tối
-                </button>
+                <!-- Nút Sáng/Tối -->
+                <button id="theme-toggle-btn" class="btn-theme-header">Sáng/Tối</button>
             </div>
         </header>
 
@@ -227,5 +223,8 @@
 
     <!-- JavaScript xử lý riêng cho trang Chi tiết Agent -->
     <script src="js/chitietAgent.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script src="js/toast.js"></script>
 </body>
 </html>

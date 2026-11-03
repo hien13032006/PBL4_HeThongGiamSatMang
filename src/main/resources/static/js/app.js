@@ -1,11 +1,21 @@
-// Quản lý Dữ liệu & Kết nối
 let agentDataStore = new Map();
 let stompClient = null;
+
+let globalThresholds = {
+    bwWarnPercent: 80.0,
+    bwCritPercent: 95.0,
+    latencyWarnMs: 80.0,
+    latencyCritMs: 150.0,
+    lossWarnPercent: 1.0,
+    lossCritPercent: 5.0
+};
 
 // Khởi chạy khi DOM tải xong
 document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
-    fetchInitialAgents();
+    fetchThresholdsConfig().then(() => {
+        fetchInitialAgents();
+    });
     connectWebSocket();
     startClock();
 });
@@ -66,42 +76,68 @@ function startClock() {
     }, 1000);
 }
 
+// 1. Nạp bộ ngưỡng cấu hình mới nhất từ CSDL qua REST API
+async function fetchThresholdsConfig() {
+    try {
+        const response = await fetch('/api/alerts/thresholds');
+        if (response.ok) {
+            const data = await response.json();
+            globalThresholds = {
+                bwWarnPercent: data.bwWarnPercent ?? 80.0,
+                bwCritPercent: data.bwCritPercent ?? 95.0,
+                latencyWarnMs: data.latencyWarnMs ?? 80.0,
+                latencyCritMs: data.latencyCritMs ?? 150.0,
+                lossWarnPercent: data.lossWarnPercent ?? 1.0,
+                lossCritPercent: data.lossCritPercent ?? 5.0
+            };
+        }
+    } catch (err) {
+        console.error("Lỗi nạp cấu hình ngưỡng từ REST API:", err);
+    }
+}
+
 /**
- * Hàm phân loại 3 mức độ chất lượng Agent: CRITICAL, WARNING, NORMAL
+ * Phân loại chất lượng Agent sử dụng qualityStatus từ CSDL 
+ * hoặc so sánh động với bộ ngưỡng CSDL (CRITICAL > WARNING > NORMAL)
  */
 function checkAgentQualityStatus(agent) {
     if (!agent) return 'NORMAL';
 
+    //Đọc thuộc tính qualityStatus trực tiếp từ CSDL/Backend
+    if (agent.qualityStatus) {
+        return agent.qualityStatus.toUpperCase();
+    }
+
+    //Tính toán động theo đúng ngưỡng lấy từ CSDL 
     const latency = parseFloat(agent.latency || 0);
     const packetLoss = parseFloat(agent.packetLoss || 0);
     const rxRate = parseFloat(agent.rxRate || 0);
     const txRate = parseFloat(agent.txRate || 0);
     const maxSpeedMb = parseFloat(agent.maxSpeed || 125.0);
-    const totalTraffic = rxRate + txRate;
+    const usagePercent = ((rxRate + txRate) / maxSpeedMb) * 100.0;
 
-    // 1. NGƯỠNG CRITICAL (Mất kết nối nghiêm trọng, cạn kiệt băng thông)
-    const isCriticalLatency = latency > 150.0;
-    const isCriticalLoss = packetLoss > 5.0;
-    const isCriticalBandwidth = totalTraffic > (maxSpeedMb * 0.95);
+    // KIỂM TRA MỨC CRITICAL
+    const isCriticalLatency = latency >= globalThresholds.latencyCritMs;
+    const isCriticalLoss = packetLoss >= globalThresholds.lossCritPercent;
+    const isCriticalBandwidth = usagePercent >= globalThresholds.bwCritPercent;
 
     if (isCriticalLatency || isCriticalLoss || isCriticalBandwidth) {
         return 'CRITICAL';
     }
 
-    // 2. NGƯỠNG WARNING (Suy hao đường truyền, lag nhẹ, tải cao)
-    const isWarningLatency = latency > 80.0;
-    const isWarningLoss = packetLoss > 1.0;
-    const isWarningBandwidth = totalTraffic > (maxSpeedMb * 0.8);
+    // KIỂM TRA MỨC WARNING 
+    const isWarningLatency = latency >= globalThresholds.latencyWarnMs;
+    const isWarningLoss = packetLoss >= globalThresholds.lossWarnPercent;
+    const isWarningBandwidth = usagePercent >= globalThresholds.bwWarnPercent;
 
     if (isWarningLatency || isWarningLoss || isWarningBandwidth) {
         return 'WARNING';
     }
 
-    // 3. MỨC BÌNH THƯỜNG
     return 'NORMAL';
 }
 
-// Lấy danh sách Agent ban đầu từ CSDL qua API
+// 2. Lấy danh sách Agent ban đầu từ CSDL qua REST API
 async function fetchInitialAgents() {
     try {
         const response = await fetch('/api/agents');
@@ -120,6 +156,7 @@ async function fetchInitialAgents() {
                 os: agent.os || 'N/A',
                 status: agent.status || 'OFFLINE',
                 maxSpeed: agent.maxSpeed || existing.maxSpeed || 125.0,
+                qualityStatus: agent.qualityStatus || existing.qualityStatus || 'NORMAL',
                 rxRate: existing.rxRate || '0.0',
                 txRate: existing.txRate || '0.0',
                 latency: existing.latency || 0,
@@ -157,6 +194,7 @@ function connectWebSocket() {
                         if (existing) {
                             existing.status = agent.status;
                             if (agent.maxSpeed) existing.maxSpeed = agent.maxSpeed;
+                            if (agent.qualityStatus) existing.qualityStatus = agent.qualityStatus;
                         } else {
                             agentDataStore.set(id, agent);
                         }
@@ -167,6 +205,7 @@ function connectWebSocket() {
                     if (existing) {
                         existing.status = payload.status;
                         if (payload.maxSpeed) existing.maxSpeed = payload.maxSpeed;
+                        if (payload.qualityStatus) existing.qualityStatus = payload.qualityStatus;
                     }
                 }
 
@@ -208,12 +247,14 @@ function updateAgentMetric(data) {
             ipAddress: 'N/A',
             os: 'N/A',
             status: 'ONLINE',
-            maxSpeed: 125.0
+            maxSpeed: 125.0,
+            qualityStatus: 'NORMAL'
         };
     }
 
-    if (data.agent && data.agent.maxSpeed) {
-        existing.maxSpeed = data.agent.maxSpeed;
+    if (data.agent) {
+        if (data.agent.maxSpeed) existing.maxSpeed = data.agent.maxSpeed;
+        if (data.agent.qualityStatus) existing.qualityStatus = data.agent.qualityStatus;
     }
 
     const m = data.metrics || data;
@@ -282,41 +323,47 @@ function updateSummaryCards() {
     let onlineCount = 0;
     let offlineCount = 0;
     let totalRx = 0;
-    let warningCount = 0;
-    let criticalCount = 0;
+    let exceededCount = 0; // Tổng số Agent vượt ngưỡng (CRITICAL + WARNING)
 
     agentDataStore.forEach(agent => {
-        if (agent.status === 'ONLINE') onlineCount++; else offlineCount++;
+        if (agent.status === 'ONLINE') {
+            onlineCount++;
+        } else {
+            offlineCount++;
+        }
+        
         totalRx += parseFloat(agent.rxRate || 0);
 
-        const status = checkAgentQualityStatus(agent);
-        if (status === 'CRITICAL') {
-            criticalCount++;
-        } else if (status === 'WARNING') {
-            warningCount++;
+        // Đọc chất lượng từ CSDL REST API hoặc hàm kiểm tra
+        const quality = (agent.qualityStatus || checkAgentQualityStatus(agent) || 'NORMAL').toUpperCase();
+
+        // Đếm tổng nếu chất lượng ở mức WARNING hoặc CRITICAL
+        if (quality === 'CRITICAL' || quality === 'WARNING') {
+            exceededCount++;
         }
     });
 
+    // 1. Tổng số Agent
     const elTotal = document.getElementById('metric-total');
     if (elTotal) elTotal.innerText = totalCount;
 
+    // 2. Số Agent Online
     const elOnline = document.getElementById('metric-online');
     if (elOnline) elOnline.innerText = onlineCount;
 
+    // 3. Số Agent Offline
     const elOffline = document.getElementById('metric-offline');
     if (elOffline) elOffline.innerText = offlineCount;
 
+    // 4. Băng thông RX tổng
     const elRx = document.getElementById('metric-rx-total');
     if (elRx) elRx.innerText = totalRx.toFixed(1) + ' MB/s';
 
-    const elWarn = document.getElementById('metric-warning');
-    if (elWarn) elWarn.innerText = warningCount;
-
-    const elCritical = document.getElementById('metric-critical');
-    if (elCritical) elCritical.innerText = criticalCount;
-
-    const alertBadge = document.getElementById('alert-count-badge');
-    if (alertBadge) alertBadge.innerText = warningCount + criticalCount;
+    // 5. Cập nhật thẻ Agent vượt ngưỡng
+    const elExceeded = document.getElementById('metric-warning');
+    if (elExceeded) {
+        elExceeded.innerText = exceededCount;
+    }
 }
 
 // Vẽ lại toàn bộ bảng danh sách
@@ -338,8 +385,8 @@ function renderDashboard() {
 
     agentDataStore.forEach(agent => {
         const isOnline = agent.status === 'ONLINE';
-        const qualityStatus = checkAgentQualityStatus(agent);
 
+        // Lọc theo bộ lọc giao diện
         if (filterIp && !agent.ipAddress.toLowerCase().includes(filterIp)) return;
         if (filterOs && !agent.os.toLowerCase().includes(filterOs)) return;
         if (filterStatus && agent.status !== filterStatus) return;
@@ -347,11 +394,26 @@ function renderDashboard() {
         const tr = document.createElement('tr');
         tr.id = `row-agent-${agent.agentId}`;
 
-        let qualityBadgeHtml = `<span class="badge-normal">Normal</span>`;
-        if (qualityStatus === 'CRITICAL') {
-            qualityBadgeHtml = `<span class="badge-critical">Critical</span>`;
-        } else if (qualityStatus === 'WARNING') {
-            qualityBadgeHtml = `<span class="badge-warning">Warning</span>`;
+        // 1. Xử lý các chỉ số số liệu 
+        const rxText = isOnline ? (agent.rxRate !== undefined ? agent.rxRate : '0.0') : '-';
+        const txText = isOnline ? (agent.txRate !== undefined ? agent.txRate : '0.0') : '-';
+        const latencyText = isOnline ? (agent.latency !== undefined ? agent.latency : 0) : '-';
+        const lossText = isOnline ? `${agent.packetLoss !== undefined ? agent.packetLoss : 0}%` : '-';
+
+        // 2. Xử lý cột Chất lượng
+        let qualityBadgeHtml = `-`;
+
+        if (isOnline) {
+            // Lấy qualityStatus trực tiếp từ CSDL hoặc dùng hàm kiểm tra
+            const qualityStatus = (agent.qualityStatus || checkAgentQualityStatus(agent) || 'NORMAL').toUpperCase();
+
+            if (qualityStatus === 'CRITICAL') {
+                qualityBadgeHtml = `<span class="badge-critical">Critical</span>`;
+            } else if (qualityStatus === 'WARNING') {
+                qualityBadgeHtml = `<span class="badge-warning">Warning</span>`;
+            } else {
+                qualityBadgeHtml = `<span class="badge-normal">Normal</span>`;
+            }
         }
 
         tr.innerHTML = `
@@ -362,15 +424,15 @@ function renderDashboard() {
                 </div>
             </td>
             <td>
-                <div style="font-weight: 700;">${agent.hostname}</div>
+                <div style="font-weight: 700;">${agent.hostname || 'Unknown'}</div>
                 <div style="font-size: 12px; color: var(--text-secondary);">${agent.agentId}</div>
             </td>
-            <td style="font-family: monospace;">${agent.ipAddress}</td>
-            <td>${agent.os}</td>
-            <td class="text-right cell-rx" style="font-weight: 600;">${agent.rxRate || '0.0'}</td>
-            <td class="text-right cell-tx" style="font-weight: 600;">${agent.txRate || '0.0'}</td>
-            <td class="text-right cell-latency" style="font-weight: 600;">${agent.latency || 0}</td>
-            <td class="text-right cell-loss" style="font-weight: 600;">${(agent.packetLoss || 0)}%</td>
+            <td style="font-family: monospace;">${agent.ipAddress || '-'}</td>
+            <td>${agent.os || '-'}</td>
+            <td class="text-right cell-rx" style="font-weight: 600;">${rxText}</td>
+            <td class="text-right cell-tx" style="font-weight: 600;">${txText}</td>
+            <td class="text-right cell-latency" style="font-weight: 600;">${latencyText}</td>
+            <td class="text-right cell-loss" style="font-weight: 600;">${lossText}</td>
             <td class="text-center cell-quality">${qualityBadgeHtml}</td>
         `;
 

@@ -9,10 +9,9 @@ let currentStartIndex = 0;
 const WINDOW_SIZE = 60;
 
 document.addEventListener('DOMContentLoaded', () => {
+    startClock();
     initThemeToggle();
     initHistoryChart();
-    
-    // Nạp danh sách Agent, sau đó tự động tra cứu 1 phút gần nhất
     fetchAgentDropdown().then(() => {
         setDefaultOneMinuteRange();
     });
@@ -27,10 +26,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('historyChart');
     if (canvas) {
         canvas.addEventListener('mouseenter', () => {
-            isHovered = true; // Đánh dấu dừng animation khi di chuột vào
+            isHovered = true; 
         });
         canvas.addEventListener('mouseleave', () => {
-            isHovered = false; // Tiếp tục chạy khi rời chuột
+            isHovered = false; 
         });
     }
 });
@@ -44,7 +43,6 @@ function initThemeToggle() {
     }
 }
 
-// 1. Cập nhật trạng thái WebSocket trên Top Header
 function updateWsStatusUI(isConnected) {
     const container = document.getElementById('ws-status-container');
     if (!container) return;
@@ -58,7 +56,7 @@ function updateWsStatusUI(isConnected) {
                     <span class="dot-ping"></span>
                     <span class="dot-solid-green"></span>
                 </span>
-                <span>WebSocket · TCP :9999 · <span>${currentTime}</span></span>
+                <span>WebSocket · TCP :9999 · <span id="ws-live-time">${currentTime}</span></span>
             </div>
         `;
     } else {
@@ -69,6 +67,18 @@ function updateWsStatusUI(isConnected) {
             </div>
         `;
     }
+}
+
+
+function startClock() {
+    updateWsStatusUI(true); 
+    
+    setInterval(() => {
+        const timeElem = document.getElementById('ws-live-time');
+        if (timeElem) {
+            timeElem.innerText = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+        }
+    }, 1000);
 }
 
 // 2. Kết nối WebSocket
@@ -222,7 +232,6 @@ async function fetchAgentDropdown() {
     }
 }
 
-// 5. Mặc định chọn 1 phút gần nhất
 function setDefaultOneMinuteRange() {
     const now = new Date();
     const pastOneMin = new Date(now.getTime() - 1 * 60 * 1000);
@@ -273,7 +282,7 @@ async function performQuery() {
     }
 }
 
-// 7. Đổ dữ liệu & Khởi chạy Chu kỳ lướt sóng (Sliding Animation)
+// 7. Đổ dữ liệu & Khởi chạy Chu kỳ lướt sóng 
 function renderHistoryData(result) {
     globalDataList = result.data || [];
     const tbody = document.getElementById('history-table-body');
@@ -302,7 +311,7 @@ function renderHistoryData(result) {
         return;
     }
 
-    // A. BẢNG DỮ LIỆU: Đổ toàn bộ bản ghi (Mới nhất nằm trên)
+    // A. BẢNG DỮ LIỆU: Đổ toàn bộ bản ghi
     [...globalDataList].reverse().forEach(item => {
         const timeFormatted = item.timestamp ? item.timestamp.replace('T', ' ').substring(0, 19) : '--';
         const rxMb = Number(item.rxRate || 0).toFixed(3);
@@ -322,9 +331,9 @@ function renderHistoryData(result) {
         tbody.appendChild(tr);
     });
 
-    // B. ĐỒ THỊ SLIDING WINDOW
+    // B. ĐỒ THỊ 
     currentStartIndex = 0;
-    updateChartWindow(); // Nạp ô cửa sổ dữ liệu đầu tiên
+    updateChartWindow(); 
 
     // Nếu số lượng bản ghi lớn hơn kích thước cửa sổ (60 mẫu), kích hoạt chu kỳ chạy trượt qua lại mỗi 1 giây
     if (globalDataList.length > WINDOW_SIZE) {
