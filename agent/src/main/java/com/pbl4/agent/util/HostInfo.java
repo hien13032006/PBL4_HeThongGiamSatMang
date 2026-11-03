@@ -86,6 +86,17 @@ public class HostInfo {
     }
 
     private static Long getMaxSpeedMbps(NetworkInterface networkInterface) {
+        String override = System.getenv("PBL4_LINK_SPEED_MBPS");
+        if (override != null && !override.isBlank()) {
+            try {
+                long speed = Long.parseLong(override.trim());
+                if (speed > 0) {
+                    return speed;
+                }
+            } catch (NumberFormatException e) {
+                log.warn("Invalid PBL4_LINK_SPEED_MBPS value: {}", override);
+            }
+        }
         String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (osName.contains("linux")) {
             Path speedFile = Path.of("/sys/class/net", networkInterface.getName(), "speed");

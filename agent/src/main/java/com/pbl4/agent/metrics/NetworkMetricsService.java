@@ -5,7 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -55,19 +54,19 @@ public class NetworkMetricsService {
     }
 
     public void probeConnectivity(String target, int timeoutMs) {
-        boolean reachable = false;
-        double latencyMs = 0;
+        Double latencyMs = null;
         try {
-            InetAddress address = InetAddress.getByName(target);
-            long startNanos = System.nanoTime();
-            reachable = address.isReachable(timeoutMs);
-            latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0;
+            latencyMs = IcmpPingProbe.measure(target, timeoutMs);
         } catch (IOException e) {
-            log.warn("Connectivity probe to {} failed", target, e);
+            log.warn("Unable to run ICMP ping to {}", target, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("ICMP ping to {} was interrupted", target);
+            return;
         }
 
         synchronized (probeWindow) {
-            probeWindow.addLast(new ProbeSample(reachable, latencyMs));
+            probeWindow.addLast(new ProbeSample(latencyMs != null, latencyMs));
             if (probeWindow.size() > PROBE_WINDOW_SIZE) {
                 probeWindow.removeFirst();
             }
@@ -83,7 +82,7 @@ public class NetworkMetricsService {
             double packetLoss = (probeWindow.size() - successfulProbes) * 100.0 / probeWindow.size();
             double latency = probeWindow.stream()
                     .filter(ProbeSample::reachable)
-                    .mapToDouble(ProbeSample::latencyMs)
+                    .mapToDouble(sample -> sample.latencyMs())
                     .average()
                     .orElse(Double.NaN);
             return new ProbeSnapshot(Double.isNaN(latency) ? null : latency, packetLoss);
@@ -98,7 +97,7 @@ public class NetworkMetricsService {
         return Math.max(0.0, deltaPackets / elapsedSeconds);
     }
 
-    private record ProbeSample(boolean reachable, double latencyMs) {
+    private record ProbeSample(boolean reachable, Double latencyMs) {
     }
 
     private record ProbeSnapshot(Double latency, Double packetLoss) {

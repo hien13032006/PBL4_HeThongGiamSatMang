@@ -33,6 +33,8 @@ public class TcpSocketClient implements AutoCloseable {
     private final String agentId;
     private final int reconnectDelayMs;
     private final int collectIntervalMs;
+    private final Integer demoRxPacketRate;
+    private final Integer demoTxPacketRate;
     private final AgentRegistration registration;
     private final ObjectMapper objectMapper;
     private final NetworkMetricsService metricsService;
@@ -49,7 +51,12 @@ public class TcpSocketClient implements AutoCloseable {
         this.agentId = registration.getAgentId();
         this.reconnectDelayMs = reconnectDelayMs;
         this.collectIntervalMs = collectIntervalMs;
+        this.demoRxPacketRate = optionalPacketRate("PBL4_DEMO_RX_PACKET_RATE_PPS");
+        this.demoTxPacketRate = optionalPacketRate("PBL4_DEMO_TX_PACKET_RATE_PPS");
         this.metricsService = metricsService;
+        if (demoRxPacketRate != null || demoTxPacketRate != null) {
+            log.warn("Demo packet-rate overrides are enabled; reported pps will not reflect captured traffic");
+        }
 
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -134,8 +141,8 @@ public class TcpSocketClient implements AutoCloseable {
                             snapshot.txRate(),
                             snapshot.totalRx(),
                             snapshot.totalTx(),
-                            packetRateAsInteger(snapshot.rxPacketRate()),
-                            packetRateAsInteger(snapshot.txPacketRate()),
+                            demoRxPacketRate != null ? demoRxPacketRate : packetRateAsInteger(snapshot.rxPacketRate()),
+                            demoTxPacketRate != null ? demoTxPacketRate : packetRateAsInteger(snapshot.txPacketRate()),
                             snapshot.latency(),
                             snapshot.packetLoss())
             );
@@ -169,6 +176,22 @@ public class TcpSocketClient implements AutoCloseable {
 
     private int packetRateAsInteger(double packetRate) {
         return (int) Math.min(Integer.MAX_VALUE, Math.round(packetRate));
+    }
+
+    private Integer optionalPacketRate(String environmentKey) {
+        String value = System.getenv(environmentKey);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            int packetRate = Integer.parseInt(value.trim());
+            if (packetRate < 0) {
+                throw new IllegalArgumentException(environmentKey + " must not be negative");
+            }
+            return packetRate;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(environmentKey + " must be a non-negative integer", e);
+        }
     }
 
     private String writeAsJson(Object payload) throws IOException {

@@ -1,0 +1,134 @@
+x-agent: &agent
+  cap_add:
+    - NET_RAW
+    - NET_ADMIN
+  environment: &agent-env
+    SERVER_HOST: ${SERVER_IP:-host.docker.internal}
+    PBL4_LINK_SPEED_MBPS: "100"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  restart: unless-stopped
+
+# Mỗi service = 1 distro. Thêm distro: copy 1 khối và đổi BASE_IMAGE.
+services:
+  ubuntu2204:
+    <<: *agent
+    image: pbl4-agent:ubuntu2204
+    hostname: ubuntu-22-04
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ubuntu:22.04
+
+  ubuntu2404:
+    <<: *agent
+    image: pbl4-agent:ubuntu2404
+    hostname: ubuntu-24-04
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ubuntu:24.04
+
+  debian12:
+    <<: *agent
+    image: pbl4-agent:debian12
+    hostname: debian-12
+    build:
+      context: .
+      args:
+        BASE_IMAGE: debian:12
+
+  rocky9:
+    <<: *agent
+    image: pbl4-agent:rocky9
+    hostname: rocky-9
+    build:
+      context: .
+      args:
+        BASE_IMAGE: rockylinux:9
+
+  # ===== Kịch bản demo (profile "scenario", không tự chạy) =====
+  # Chạy:  docker compose --profile scenario up -d sc-overload
+  sc-overload:
+    <<: *agent
+    profiles: ["scenario"]
+    image: pbl4-agent:ubuntu2404
+    hostname: demo-overload
+    build: { context: ., args: { BASE_IMAGE: "ubuntu:24.04" } }
+    environment:
+      <<: *agent-env
+      PBL4_LINK_SPEED_MBPS: "10"   # băng thông tối đa nhỏ để dễ vượt 95%
+      DEMO_SCENARIO: overload
+
+  sc-upload:
+    <<: *agent
+    profiles: ["scenario"]
+    image: pbl4-agent:ubuntu2404
+    hostname: demo-upload
+    build: { context: ., args: { BASE_IMAGE: "ubuntu:24.04" } }
+    environment:
+      <<: *agent-env
+      DEMO_SCENARIO: upload
+
+  sc-lag:
+    <<: *agent
+    profiles: ["scenario"]
+    image: pbl4-agent:ubuntu2404
+    hostname: demo-lag
+    build: { context: ., args: { BASE_IMAGE: "ubuntu:24.04" } }
+    environment:
+      <<: *agent-env
+      DEMO_SCENARIO: lag
+      DEMO_DELAY_MS: "200"         # >150ms = CRITICAL, 80-150 = WARNING
+      PBL4_PING_TARGET: 127.0.0.1
+
+  sc-loss:
+    <<: *agent
+    profiles: ["scenario"]
+    image: pbl4-agent:ubuntu2404
+    hostname: demo-loss
+    build: { context: ., args: { BASE_IMAGE: "ubuntu:24.04" } }
+    environment:
+      <<: *agent-env
+      DEMO_SCENARIO: loss
+      DEMO_LOSS_PCT: "10"          # >5% = CRITICAL, 1-5% = WARNING
+      PBL4_PING_TARGET: 127.0.0.1
+
+  # Three focused scenarios requested for the demo.
+  demo-high-pps:
+    <<: *agent
+    profiles: ["scenario"]
+    image: pbl4-agent:ubuntu2404
+    hostname: demo-high-pps
+    build: { context: ., args: { BASE_IMAGE: "ubuntu:24.04" } }
+    environment:
+      <<: *agent-env
+      DEMO_SCENARIO: high-pps
+      PBL4_DEMO_RX_PACKET_RATE_PPS: "35000"
+      PBL4_DEMO_TX_PACKET_RATE_PPS: "35000"
+
+  demo-packet-loss:
+    <<: *agent
+    profiles: ["scenario"]
+    image: pbl4-agent:ubuntu2404
+    hostname: demo-packet-loss
+    build: { context: ., args: { BASE_IMAGE: "ubuntu:24.04" } }
+    environment:
+      <<: *agent-env
+      DEMO_SCENARIO: packet-loss
+      DEMO_LOSS_PCT: "10"
+      PBL4_PING_TARGET: 127.0.0.1
+      PBL4_PROBE_INTERVAL_MS: "1000"
+
+  demo-latency:
+    <<: *agent
+    profiles: ["scenario"]
+    image: pbl4-agent:ubuntu2404
+    hostname: demo-latency
+    build: { context: ., args: { BASE_IMAGE: "ubuntu:24.04" } }
+    environment:
+      <<: *agent-env
+      DEMO_SCENARIO: latency
+      DEMO_DELAY_MS: "120"
+      PBL4_PING_TARGET: 127.0.0.1
+      PBL4_PROBE_INTERVAL_MS: "1000"
