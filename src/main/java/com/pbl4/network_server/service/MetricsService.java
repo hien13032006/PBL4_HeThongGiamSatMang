@@ -11,13 +11,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Service
 public class MetricsService {
@@ -36,8 +34,9 @@ public class MetricsService {
     @Autowired
     private AlertService alertService;
 
-    private final Map<String, LinkedList<MetricsMessageDto.MetricsDetailDto>> agentWindowMap = new ConcurrentHashMap<>();
-    private static final int WINDOW_LIMIT = 300; 
+    // Quản lý Sliding Window riêng biệt 100% cho từng Agent
+    private final Map<String, Queue<MetricsMessageDto.MetricsDetailDto>> agentWindowMap = new ConcurrentHashMap<>();
+    private static final int MAX_SLIDING_SAMPLES = 60; // Tối đa 60 mẫu gần nhất (~1-2 phút)
 
     private final Map<String, Long> lastAlertTimeMap = new ConcurrentHashMap<>();
 
@@ -55,11 +54,8 @@ public class MetricsService {
         return false;
     }
 
-    @Transactional
     public void processAndSaveMetrics(MetricsMessageDto message) {
-        if (message == null || message.getAgentId() == null) {
-            return;
-        }
+        if (message == null || message.getAgentId() == null) return;
 
         String agentId = message.getAgentId();
         String type = message.getType();
@@ -74,10 +70,7 @@ public class MetricsService {
             rawMaxSpeedMbps = message.getMetrics().getMaxSpeed();
         }
 
-        Double convertedMaxSpeedMb = null;
-        if (rawMaxSpeedMbps != null && rawMaxSpeedMbps > 0) {
-            convertedMaxSpeedMb = rawMaxSpeedMbps / 8.0;
-        }
+        Double convertedMaxSpeedMb = (rawMaxSpeedMbps != null && rawMaxSpeedMbps > 0) ? rawMaxSpeedMbps / 8.0 : null;
 
         if (optionalAgent.isPresent()) {
             agent = optionalAgent.get();
@@ -100,7 +93,11 @@ public class MetricsService {
             } else if (agent.getMaxSpeed() == null) {
                 agent.setMaxSpeed(125.0);
             }
-            agentRepository.save(agent);
+            
+            // Chỉ save agent vào CSDL khi ĐĂNG KÝ hoặc THAY ĐỔI TRẠNG THÁI để tránh quá tải MySQL
+            if ("REGISTER".equalsIgnoreCase(type) || statusChangedToOnline) {
+                agentRepository.save(agent);
+            }
         } else {
             agent = Agent.builder()
                     .agentId(agentId)
@@ -141,12 +138,8 @@ public class MetricsService {
             if (usagePercent > 100.0) usagePercent = 100.0;
             detail.setNetworkUsagePercent(Math.round(usagePercent * 100.0) / 100.0);
 
-            LocalDateTime logTime;
-            if (message.getTimestamp() != null) {
-                logTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(message.getTimestamp()), ZoneId.systemDefault());
-            } else {
-                logTime = LocalDateTime.now();
-            }
+            // LUÔN DÙNG THỜI GIAN THỰC CỦA SERVER để đồng bộ mốc thời gian giữa các Container
+            LocalDateTime logTime = LocalDateTime.now();
 
             MetricsHistory history = MetricsHistory.builder()
                     .agent(agent)
@@ -161,255 +154,144 @@ public class MetricsService {
 
             metricsHistoryRepository.save(history);
 
-            agentWindowMap.putIfAbsent(agentId, new LinkedList<>());
-            LinkedList<MetricsMessageDto.MetricsDetailDto> window = agentWindowMap.get(agentId);
-            synchronized (window) {
-                window.addLast(detail);
-                if (window.size() > WINDOW_LIMIT) {
-                    window.removeFirst();
-                }
+            // Đẩy mẫu dữ liệu vào Queue cửa sổ trượt riêng của Agent này
+            Queue<MetricsMessageDto.MetricsDetailDto> window = agentWindowMap.computeIfAbsent(agentId, k -> new ConcurrentLinkedQueue<>());
+            window.add(detail);
+            while (window.size() > MAX_SLIDING_SAMPLES) {
+                window.poll();
             }
 
-            evaluateStrictThresholds(agentId, agent.getHostname(), window, currentMaxSpeedMb);
+            evaluateStrictThresholds(agent, new ArrayList<>(window), currentMaxSpeedMb);
 
             messagingTemplate.convertAndSend("/topic/metrics/" + agentId, message);
         }
     }
 
-    /**
-     * Đánh giá cảnh báo và gắn ngay thuộc tính qualityStatus khi phát hiện vi phạm
-     */
-    private void evaluateStrictThresholds(String agentId, String hostname, 
-                                           LinkedList<MetricsMessageDto.MetricsDetailDto> window, 
-                                           double maxSpeedMb) {
-        String host = (hostname != null) ? hostname : agentId;
-        List<MetricsMessageDto.MetricsDetailDto> samples;
-
-        synchronized (window) {
-            samples = new ArrayList<>(window);
-        }
-
+    private void evaluateStrictThresholds(Agent agent, List<MetricsMessageDto.MetricsDetailDto> samples, double maxSpeedMb) {
         if (samples.isEmpty()) return;
+
+        String agentId = agent.getAgentId();
+        String host = (agent.getHostname() != null) ? agent.getHostname() : agentId;
         MetricsMessageDto.MetricsDetailDto latest = samples.get(samples.size() - 1);
 
         AlertThreshold cfg = alertService.getThresholds();
         if (cfg == null) return;
 
-        String currentQuality = "NORMAL";
+        // Đánh giá cấp độ nguy hiểm độc lập cho từng chỉ số
+        boolean isCritical = false;
+        boolean isWarning = false;
 
-        // --------------------------------------------------------------------------
-        // 0. KIỂM TRA PHÁT HIỆN XÂM NHẬP DỰA TRÊN PACKET RATE BẤT THƯỜNG
-        // --------------------------------------------------------------------------
+        // 1. KIỂM TRA PACKET RATE ANOMALY (Phát hiện tấn công)
         if (checkPacketRateAnomalyAlert(agentId, host, latest)) {
-            currentQuality = "CRITICAL";
+            isCritical = true;
         }
 
-        // --------------------------------------------------------------------------
-        // 1. NGƯỠNG PACKET LOSS
-        // --------------------------------------------------------------------------
+        // 2. NGƯỠNG PACKET LOSS
         if (latest.getPacketLoss() != null) {
             Double lossImmediateCfg = cfg.getLossCritImmediate();
             if (lossImmediateCfg != null && latest.getPacketLoss() > lossImmediateCfg) {
-                currentQuality = "CRITICAL";
+                isCritical = true;
                 if (shouldTriggerAlert(agentId, "LOSS_IMMEDIATE", 0)) {
-                    log.error("[CRITICAL - PACKET LOSS] Agent {} ({}) bị mất gói tức thời: {}%!", host, agentId, latest.getPacketLoss());
                     alertService.addAlertLog(agentId, host, "Packet Loss", "CRITICAL", latest.getPacketLoss(), "%", lossImmediateCfg);
                 }
             } else {
+                double avgLoss = getAveragePacketLoss(samples);
                 Double lossCritCfg = cfg.getLossCritPercent();
-                Integer lossCritMin = cfg.getLossCritDuration();
-                if (lossCritCfg != null && lossCritMin != null) {
-                    int lossCritSamples = lossCritMin * 60;
-                    if (samples.size() >= Math.max(1, (int)(lossCritSamples * 0.8))) {
-                        double avgLossCrit = getAveragePacketLoss(samples, lossCritSamples);
-                        if (avgLossCrit > lossCritCfg) {
-                            currentQuality = "CRITICAL";
-                            if (shouldTriggerAlert(agentId, "LOSS_CRITICAL", lossCritMin)) {
-                                log.error("[CRITICAL - PACKET LOSS] Agent {} ({}) mất gói trung bình: {}%!", host, agentId, String.format("%.1f", avgLossCrit));
-                                alertService.addAlertLog(agentId, host, "Packet Loss", "CRITICAL", avgLossCrit, "%", lossCritCfg);
-                            }
-                        }
-                    }
-                }
+                Double lossWarnCfg = cfg.getLossWarnPercent();
 
-                if (!"CRITICAL".equals(currentQuality)) {
-                    Double lossWarnCfg = cfg.getLossWarnPercent();
-                    Integer lossWarnMin = cfg.getLossWarnDuration();
-                    if (lossWarnCfg != null && lossWarnMin != null) {
-                        int lossWarnSamples = lossWarnMin * 60;
-                        if (samples.size() >= Math.max(1, (int)(lossWarnSamples * 0.8))) {
-                            double avgLossWarn = getAveragePacketLoss(samples, lossWarnSamples);
-                            if (avgLossWarn > lossWarnCfg) {
-                                currentQuality = "WARNING";
-                                if (shouldTriggerAlert(agentId, "LOSS_WARNING", lossWarnMin)) {
-                                    log.warn("[WARNING - PACKET LOSS] Agent {} ({}) mất gói trung bình: {}%", host, agentId, String.format("%.1f", avgLossWarn));
-                                    alertService.addAlertLog(agentId, host, "Packet Loss", "WARNING", avgLossWarn, "%", lossWarnCfg);
-                                }
-                            }
-                        }
+                if (lossCritCfg != null && avgLoss > lossCritCfg) {
+                    isCritical = true;
+                    if (shouldTriggerAlert(agentId, "LOSS_CRITICAL", cfg.getLossCritDuration())) {
+                        alertService.addAlertLog(agentId, host, "Packet Loss", "CRITICAL", avgLoss, "%", lossCritCfg);
+                    }
+                } else if (lossWarnCfg != null && avgLoss > lossWarnCfg) {
+                    isWarning = true;
+                    if (shouldTriggerAlert(agentId, "LOSS_WARNING", cfg.getLossWarnDuration())) {
+                        alertService.addAlertLog(agentId, host, "Packet Loss", "WARNING", avgLoss, "%", lossWarnCfg);
                     }
                 }
             }
         }
 
-        // --------------------------------------------------------------------------
-        // 2. NGƯỠNG LATENCY
-        // --------------------------------------------------------------------------
+        // 3. NGƯỠNG LATENCY
         if (latest.getLatency() != null) {
+            double avgLatency = getAverageLatency(samples);
             Double latencyCritCfg = cfg.getLatencyCritMs();
-            Integer latencyCritMin = cfg.getLatencyCritDuration();
-            if (latencyCritCfg != null && latencyCritMin != null) {
-                int latencyCritSamples = latencyCritMin * 60;
-                if (samples.size() >= Math.max(1, (int)(latencyCritSamples * 0.8))) {
-                    double avgLatencyCrit = getAverageLatency(samples, latencyCritSamples);
-                    if (avgLatencyCrit > latencyCritCfg) {
-                        currentQuality = "CRITICAL";
-                        if (shouldTriggerAlert(agentId, "LATENCY_CRITICAL", latencyCritMin)) {
-                            log.error("[CRITICAL - LATENCY] Agent {} ({}) Ping trung bình: {} ms!", host, agentId, String.format("%.1f", avgLatencyCrit));
-                            alertService.addAlertLog(agentId, host, "Latency", "CRITICAL", avgLatencyCrit, "ms", latencyCritCfg);
-                        }
-                    }
-                }
-            }
+            Double latencyWarnCfg = cfg.getLatencyWarnMs();
 
-            if (!"CRITICAL".equals(currentQuality)) {
-                Double latencyWarnCfg = cfg.getLatencyWarnMs();
-                Integer latencyWarnMin = cfg.getLatencyWarnDuration();
-                if (latencyWarnCfg != null && latencyWarnMin != null) {
-                    int latencyWarnSamples = latencyWarnMin * 60;
-                    if (samples.size() >= Math.max(1, (int)(latencyWarnSamples * 0.8))) {
-                        double avgLatencyWarn = getAverageLatency(samples, latencyWarnSamples);
-                        if (avgLatencyWarn > latencyWarnCfg) {
-                            if (!"CRITICAL".equals(currentQuality)) {
-                                currentQuality = "WARNING";
-                            }
-                            if (shouldTriggerAlert(agentId, "LATENCY_WARNING", latencyWarnMin)) {
-                                log.warn("[WARNING - LATENCY] Agent {} ({}) Ping trung bình: {} ms", host, agentId, String.format("%.1f", avgLatencyWarn));
-                                alertService.addAlertLog(agentId, host, "Latency", "WARNING", avgLatencyWarn, "ms", latencyWarnCfg);
-                            }
-                        }
-                    }
+            if (latencyCritCfg != null && avgLatency > latencyCritCfg) {
+                isCritical = true;
+                if (shouldTriggerAlert(agentId, "LATENCY_CRITICAL", cfg.getLatencyCritDuration())) {
+                    alertService.addAlertLog(agentId, host, "Latency", "CRITICAL", avgLatency, "ms", latencyCritCfg);
+                }
+            } else if (latencyWarnCfg != null && avgLatency > latencyWarnCfg) {
+                isWarning = true;
+                if (shouldTriggerAlert(agentId, "LATENCY_WARNING", cfg.getLatencyWarnDuration())) {
+                    alertService.addAlertLog(agentId, host, "Latency", "WARNING", avgLatency, "ms", latencyWarnCfg);
                 }
             }
         }
 
-        // --------------------------------------------------------------------------
-        // 3. NGƯỠNG BĂNG THÔNG (BANDWIDTH)
-        // --------------------------------------------------------------------------
+        // 4. NGƯỠNG BĂNG THÔNG
         if (latest.getNetworkUsagePercent() != null) {
+            double avgUsage = getAverageUsagePercent(samples);
             Double bwCritCfg = cfg.getBwCritPercent();
-            Integer bwCritMin = cfg.getBwCritDuration();
-            if (bwCritCfg != null && bwCritMin != null) {
-                int bwCritSamples = bwCritMin * 60;
-                if (samples.size() >= Math.max(1, (int)(bwCritSamples * 0.8))) {
-                    double avgUsageCrit = getAverageUsagePercent(samples, bwCritSamples);
-                    if (avgUsageCrit > bwCritCfg) {
-                        currentQuality = "CRITICAL";
-                        if (shouldTriggerAlert(agentId, "BW_CRITICAL", bwCritMin)) {
-                            log.error("[CRITICAL - BANDWIDTH] Agent {} ({}) quá tải băng thông: {}%!", host, agentId, String.format("%.1f", avgUsageCrit));
-                            alertService.addAlertLog(agentId, host, "Bandwidth", "CRITICAL", avgUsageCrit, "%", bwCritCfg);
-                        }
-                    }
-                }
-            }
+            Double bwWarnCfg = cfg.getBwWarnPercent();
 
-            if (!"CRITICAL".equals(currentQuality)) {
-                Double bwWarnCfg = cfg.getBwWarnPercent();
-                Integer bwWarnMin = cfg.getBwWarnDuration();
-                if (bwWarnCfg != null && bwWarnMin != null) {
-                    int bwWarnSamples = bwWarnMin * 60;
-                    if (samples.size() >= Math.max(1, (int)(bwWarnSamples * 0.8))) {
-                        double avgUsageWarn = getAverageUsagePercent(samples, bwWarnSamples);
-                        if (avgUsageWarn > bwWarnCfg) {
-                            if (!"CRITICAL".equals(currentQuality)) {
-                                currentQuality = "WARNING";
-                            }
-                            if (shouldTriggerAlert(agentId, "BW_WARNING", bwWarnMin)) {
-                                log.warn("[WARNING - BANDWIDTH] Agent {} ({}) quá tải băng thông: {}%", host, agentId, String.format("%.1f", avgUsageWarn));
-                                alertService.addAlertLog(agentId, host, "Bandwidth", "WARNING", avgUsageWarn, "%", bwWarnCfg);
-                            }
-                        }
-                    }
+            if (bwCritCfg != null && avgUsage > bwCritCfg) {
+                isCritical = true;
+                if (shouldTriggerAlert(agentId, "BW_CRITICAL", cfg.getBwCritDuration())) {
+                    alertService.addAlertLog(agentId, host, "Bandwidth", "CRITICAL", avgUsage, "%", bwCritCfg);
+                }
+            } else if (bwWarnCfg != null && avgUsage > bwWarnCfg) {
+                isWarning = true;
+                if (shouldTriggerAlert(agentId, "BW_WARNING", cfg.getBwWarnDuration())) {
+                    alertService.addAlertLog(agentId, host, "Bandwidth", "WARNING", avgUsage, "%", bwWarnCfg);
                 }
             }
         }
 
-        // --------------------------------------------------------------------------
-        // CẬP NHẬT TRỰC TIẾP THUỘC TÍNH QUALITY_STATUS VÀO CSDL AGENTS
-        // --------------------------------------------------------------------------
-        final String finalQuality = currentQuality;
-        agentRepository.findById(agentId).ifPresent(agent -> {
-            if (!finalQuality.equalsIgnoreCase(agent.getQualityStatus())) {
-                agent.setQualityStatus(finalQuality);
-                agentRepository.save(agent); // Lưu trực tiếp xuống MySQL
+        // 5. TỔNG HỢP TRẠNG THÁI CUỐI CÙNG (Thứ tự ưu tiên: CRITICAL > WARNING > NORMAL)
+        String calculatedQuality = "NORMAL";
+        if (isCritical) {
+            calculatedQuality = "CRITICAL";
+        } else if (isWarning) {
+            calculatedQuality = "WARNING";
+        }
 
-                // Phát lại danh sách Agent mới nhất qua WebSocket cho trang Dashboard
-                messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
-            }
-        });
+        // 6. CẬP NHẬT CSDl VÀ PUSH WEBSOCKET CHỈ KHI TRẠNG THÁI THAY ĐỔI
+        if (!calculatedQuality.equalsIgnoreCase(agent.getQualityStatus())) {
+            agent.setQualityStatus(calculatedQuality);
+            agentRepository.save(agent);
+            messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
+        }
     }
 
-    /**
-     * Kiểm tra hành vi xâm nhập dựa trên Packet Rate bất thường
-     */
     private boolean checkPacketRateAnomalyAlert(String agentId, String host, MetricsMessageDto.MetricsDetailDto latest) {
         Long rxPps = latest.getRxPacketRate() != null ? latest.getRxPacketRate() : 0L;
         Long txPps = latest.getTxPacketRate() != null ? latest.getTxPacketRate() : 0L;
         long totalPps = rxPps + txPps;
-
-        // Ngưỡng an toàn: > 30,000 pps nghi vấn bị tấn công Flood/Scanning
         double PACKET_RATE_CRIT_THRESHOLD = 30000.0;
 
         if (totalPps > PACKET_RATE_CRIT_THRESHOLD) {
-            if (shouldTriggerAlert(agentId, "PACKET_RATE_ANOMALY", 0)) { // Bắn ngay không qua cooldown
-                log.error("[CRITICAL - PACKET RATE ANOMALY] Agent {} ({}) tốc độ gói tin bất thường: {} pps (RX: {}, TX: {})!",
-                        host, agentId, totalPps, rxPps, txPps);
-
-                alertService.addAlertLog(
-                    agentId,
-                    host,
-                    "Packet Rate Anomaly",
-                    "CRITICAL",
-                    (double) totalPps,
-                    "pps",
-                    PACKET_RATE_CRIT_THRESHOLD
-                );
+            if (shouldTriggerAlert(agentId, "PACKET_RATE_ANOMALY", 0)) {
+                log.error("[CRITICAL - PACKET RATE ANOMALY] Agent {} ({}) tốc độ gói tin bất thường: {} pps!", host, agentId, totalPps);
+                alertService.addAlertLog(agentId, host, "Packet Rate Anomaly", "CRITICAL", (double) totalPps, "pps", PACKET_RATE_CRIT_THRESHOLD);
             }
             return true;
         }
         return false;
     }
 
-    private double getAveragePacketLoss(List<MetricsMessageDto.MetricsDetailDto> samples, int count) {
-        int limit = Math.min(samples.size(), count);
-        if (limit == 0) return 0.0;
-        double sum = 0;
-        for (int i = samples.size() - limit; i < samples.size(); i++) {
-            Double val = samples.get(i).getPacketLoss();
-            sum += (val != null) ? val : 0.0;
-        }
-        return sum / limit;
+    private double getAveragePacketLoss(List<MetricsMessageDto.MetricsDetailDto> samples) {
+        return samples.stream().mapToDouble(s -> s.getPacketLoss() != null ? s.getPacketLoss() : 0.0).average().orElse(0.0);
     }
 
-    private double getAverageLatency(List<MetricsMessageDto.MetricsDetailDto> samples, int count) {
-        int limit = Math.min(samples.size(), count);
-        if (limit == 0) return 0.0;
-        double sum = 0;
-        for (int i = samples.size() - limit; i < samples.size(); i++) {
-            Double val = samples.get(i).getLatency();
-            sum += (val != null) ? val : 0.0;
-        }
-        return sum / limit;
+    private double getAverageLatency(List<MetricsMessageDto.MetricsDetailDto> samples) {
+        return samples.stream().mapToDouble(s -> s.getLatency() != null ? s.getLatency() : 0.0).average().orElse(0.0);
     }
 
-    private double getAverageUsagePercent(List<MetricsMessageDto.MetricsDetailDto> samples, int count) {
-        int limit = Math.min(samples.size(), count);
-        if (limit == 0) return 0.0;
-        double sum = 0;
-        for (int i = samples.size() - limit; i < samples.size(); i++) {
-            Double val = samples.get(i).getNetworkUsagePercent();
-            sum += (val != null) ? val : 0.0;
-        }
-        return sum / limit;
+    private double getAverageUsagePercent(List<MetricsMessageDto.MetricsDetailDto> samples) {
+        return samples.stream().mapToDouble(s -> s.getNetworkUsagePercent() != null ? s.getNetworkUsagePercent() : 0.0).average().orElse(0.0);
     }
 }

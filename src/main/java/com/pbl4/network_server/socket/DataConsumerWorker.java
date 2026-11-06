@@ -10,8 +10,6 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-// Tạo một Component làm nhiệm vụ lấy dữ liệu từ BlockingQueue ra để lưu vào MySQL và đẩy xuống WebSocket cho Dashboard
-
 @Component
 public class DataConsumerWorker {
 
@@ -21,44 +19,44 @@ public class DataConsumerWorker {
     @Autowired
     private MetricsService metricsService;
 
-    // Số lượng Worker Threads xử lý song song
-    private static final int WORKER_COUNT = 4;
-    private final ExecutorService workerPool = Executors.newFixedThreadPool(WORKER_COUNT);
+    // Tạo ThreadPool gồm 10 - 20 worker để xử lý song song các gói tin từ Queue
+    private final ExecutorService workerPool = Executors.newFixedThreadPool(15);
     private volatile boolean isRunning = true;
 
     @PostConstruct
     public void startConsuming() {
-        // Khởi tạo các Worker Threads xử lý dữ liệu đồng thời
-        for (int i = 0; i < WORKER_COUNT; i++) {
-            workerPool.submit(this::consumeTask);
-        }
-        System.out.println("[DataConsumerWorker] Đã khởi tạo " + WORKER_COUNT + " luồng Consumer xử lý hàng đợi.");
-    }
-
-    private void consumeTask() {
-        while (isRunning && !Thread.currentThread().isInterrupted()) {
-            try {
-                // Lấy dữ liệu từ BlockingQueue (Chờ nếu Queue trống)
-                MetricsMessageDto data = queueManager.takeData();
-                
-                if (data != null) {
-                    // Xử lý lưu Database, cập nhật LastSeen và bắn WebSocket
-                    metricsService.processAndSaveMetrics(data);
+        // Mở 1 luồng chính chuyên lấy dữ liệu ra khỏi Queue và phân phối cho Worker Pool
+        new Thread(() -> {
+            System.out.println("[CONSUMER WORKER] Đã khởi chạy 15 Worker Threads tiêu thụ Queue song song...");
+            while (isRunning) {
+                try {
+                    // Rút gói tin từ Queue (Blocking nếu queue trống)
+                    MetricsMessageDto data = queueManager.takeData();
+                    
+                    if (data != null) {
+                        // ĐẨY NGAY VÀO WORKER POOL ĐỂ XỬ LÝ SONG SONG (Không chờ từng gói)
+                        workerPool.submit(() -> {
+                            try {
+                                metricsService.processAndSaveMetrics(data);
+                            } catch (Exception e) {
+                                System.err.println("[CONSUMER ERROR] Lỗi xử lý metric của Agent " 
+                                        + data.getAgentId() + ": " + e.getMessage());
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.err.println("[CONSUMER ERROR] Lỗi rút dữ liệu từ Queue: " + e.getMessage());
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                // Bắt ngoại lệ để tránh làm chết luồng Worker
-                System.err.println("[LỖI CONSUMER] Lỗi xử lý dữ liệu metrics: " + e.getMessage());
             }
-        }
+        }, "queue-dispatcher-thread").start();
     }
 
     @PreDestroy
-    public void stopConsuming() {
+    public void stopWorker() {
         isRunning = false;
         workerPool.shutdownNow();
-        System.out.println("[DataConsumerWorker] Đã dừng các luồng Consumer an toàn.");
     }
 }
