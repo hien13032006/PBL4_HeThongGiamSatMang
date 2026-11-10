@@ -29,4 +29,6 @@ public interface MetricsHistoryRepository extends JpaRepository<MetricsHistory, 
     // 5. Tính tổng TX (KB) tích lũy trong CSDL của Agent
     @Query("SELECT COALESCE(SUM(m.txRate), 0.0) FROM MetricsHistory m WHERE m.agent.agentId = :agentId")
     Double sumTotalTxByAgentId(@Param("agentId") String agentId);
+    // 6. Xóa tất cả bản ghi MetricsHistory của 1 Agent
+    void deleteByAgentAgentId(String agentId);
 }

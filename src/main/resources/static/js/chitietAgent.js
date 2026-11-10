@@ -1,7 +1,7 @@
 let stompClient = null;
 let currentAgentId = null;
 let activeSubscription = null;
-
+let targetAgentIdToDelete = null;
 let bandwidthChart, latencyChart, packetRateChart, packetLossChart;
 const MAX_DATA_POINTS = 30; // ~60 giây dữ liệu real-time
 let currentMaxSpeedMb = 125.0; 
@@ -346,18 +346,11 @@ function pushMetricToCharts(data) {
     }
 
     // TÍNH TOÁN CÁC ĐƯỜNG NGƯỠNG ĐỘNG DỰA TRÊN CSDL VÀ MAX SPEED CARD MẠNG
-    // 1. Biểu đồ Băng thông: Ngưỡng Warning % và Critical % công suất Card mạng
     const bwWarnVal = Number((currentMaxSpeedMb * (alertThresholds.bwWarnPercent / 100.0)).toFixed(2));
     const bwCritVal = Number((currentMaxSpeedMb * (alertThresholds.bwCritPercent / 100.0)).toFixed(2));
     addPoint(bandwidthChart, timeLabel, [rxMb, txMb, bwWarnVal, bwCritVal]);
-
-    // 2. Biểu đồ Latency: Ngưỡng Warning (ms) và Critical (ms) từ CSDL
     addPoint(latencyChart, timeLabel, [m.latency || 0, alertThresholds.latencyWarnMs, alertThresholds.latencyCritMs]);
-
-    // 3. Biểu đồ Packet Rate: RX vs TX packets/s
     addPoint(packetRateChart, timeLabel, [m.rxPacketRate || 0, m.txPacketRate || 0]);
-
-    // 4. Biểu đồ Packet Loss: Ngưỡng Warning (%) và Critical (%) từ CSDL
     addPoint(packetLossChart, timeLabel, [m.packetLoss || 0, alertThresholds.lossWarnPercent, alertThresholds.lossCritPercent]);
 }
 
@@ -381,6 +374,91 @@ function resetCharts() {
             chart.data.labels = [];
             chart.data.datasets.forEach(ds => ds.data = []);
             chart.update();
+        }
+    });
+}
+
+function deleteCurrentAgent() {
+    const agentSelect = document.getElementById("agent-select");
+    targetAgentIdToDelete = agentSelect ? agentSelect.value : null;
+
+    if (!targetAgentIdToDelete) {
+        if (typeof showToast === "function") {
+            showToast("Vui lòng chọn một Agent để xóa!", "warning");
+        } else {
+            console.warn("Chưa có Agent nào được chọn.");
+        }
+        return;
+    }
+
+    const messageElem = document.getElementById("modal-delete-message");
+    if (messageElem) {
+        messageElem.innerText = `Bạn có chắc chắn muốn xóa Agent "${targetAgentIdToDelete}" và toàn bộ dữ liệu liên quan khỏi hệ thống?`;
+    }
+
+    const confirmBtn = document.getElementById("btn-modal-confirm-delete");
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerText = "Xác nhận";
+        confirmBtn.onclick = executeDeleteAgent;
+    }
+
+    const modalOverlay = document.getElementById("delete-modal-overlay");
+    if (modalOverlay) {
+        modalOverlay.style.display = "flex";
+    }
+}
+
+// 2. Đóng Modal khi bấm Hủy
+function closeDeleteModal() {
+    const modalOverlay = document.getElementById("delete-modal-overlay");
+    if (modalOverlay) {
+        modalOverlay.style.display = "none";
+    }
+    targetAgentIdToDelete = null;
+}
+
+// 3. Thực thi gửi request DELETE tới Backend Server (Tuyệt đối /api/agents/)
+function executeDeleteAgent() {
+    if (!targetAgentIdToDelete) return;
+
+    const confirmBtn = document.getElementById("btn-modal-confirm-delete");
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerText = "Đang xóa...";
+    }
+
+    fetch(`/api/agents/${targetAgentIdToDelete}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            closeDeleteModal();
+            // Lưu thông báo vào sessionStorage trước khi chuyển trang
+            sessionStorage.setItem("toast_msg", `Đã xóa Agent ${targetAgentIdToDelete} thành công!`);
+            sessionStorage.setItem("toast_type", "success");
+            
+            // Chuyển hướng ngay lập tức về trang Tổng quan
+            window.location.href = "index.html";
+        } else {
+            return response.json().then(data => {
+                throw new Error(data.message || data.error || "Xóa Agent thất bại!");
+            });
+        }
+    })
+    .catch(error => {
+        console.error("Error deleting agent:", error);
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerText = "Xác nhận";
+        }
+        if (typeof showToast === "function") {
+            showToast("Lỗi khi xóa Agent: " + error.message, "error");
+        } else {
+            closeDeleteModal();
         }
     });
 }

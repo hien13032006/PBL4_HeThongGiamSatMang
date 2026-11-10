@@ -452,3 +452,18 @@ function resetFilters() {
 
     renderDashboard();
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Kiểm tra và hiển thị Toast nếu có thông báo từ trang Chi tiết chuyển sang
+    const toastMsg = sessionStorage.getItem("toast_msg");
+    const toastType = sessionStorage.getItem("toast_type") || "success";
+
+    if (toastMsg) {
+        if (typeof showToast === "function") {
+            showToast(toastMsg, toastType);
+        }
+        // Xóa thông báo khỏi lưu trữ để không bị lặp lại khi refresh trang
+        sessionStorage.removeItem("toast_msg");
+        sessionStorage.removeItem("toast_type");
+    }
+});

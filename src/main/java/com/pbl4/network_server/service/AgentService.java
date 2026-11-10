@@ -119,4 +119,24 @@ public class AgentService {
 
         return response;
     }
+    // 6. Xóa Agent và tất cả dữ liệu liên quan cho Controller
+    @Transactional
+    public boolean deleteAgent(String agentId) {
+        if (agentRepository.existsById(agentId)) {
+            // 1. Xóa tất cả chỉ số lịch sử liên quan đến Agent trước để tránh lỗi Foreign Key
+            metricsHistoryRepository.deleteByAgentAgentId(agentId);
+
+            // 2. Xóa Agent khỏi CSDL
+            agentRepository.deleteById(agentId);
+
+            // 3. Bắn WebSocket thông báo để các client cập nhật lại danh sách Agent
+            try {
+                messagingTemplate.convertAndSend("/topic/agents", agentRepository.findAll());
+            } catch (Exception e) {
+                System.err.println("Lỗi gửi WebSocket khi xóa Agent: " + e.getMessage());
+            }
+            return true;
+        }
+        return false;
+    }
 }
